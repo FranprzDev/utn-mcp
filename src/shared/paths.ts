@@ -12,3 +12,9 @@ export function configDir(): string {
 
 /** Token de Moodle + cookies del SSO del modo local. */
 export const sessionFile = () => join(configDir(), "session.json");
+
+/** Base de usuarios, tokens y sesiones del modo HTTP: UTN_MCP_DB o un SQLite en la carpeta de configuración. */
+export const storeFile = () => process.env.UTN_MCP_DB ?? join(configDir(), "utn-mcp.db");
+
+/** Clave con la que se cifran las sesiones en la base, si no viene en UTN_MCP_KEY. */
+export const storeKeyFile = () => join(configDir(), "store.key");

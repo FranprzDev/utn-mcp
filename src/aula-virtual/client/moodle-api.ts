@@ -3,6 +3,7 @@ import { AULA_BASE_URL } from "./constants.js";
 import type { AulaSession } from "./session.js";
 
 const WS_URL = `${AULA_BASE_URL}/webservice/rest/server.php`;
+const UPLOAD_URL = `${AULA_BASE_URL}/webservice/upload.php`;
 const TOKEN_ERRORS = new Set(["invalidtoken", "expiredtoken"]);
 
 export class MoodleError extends Error {
@@ -80,6 +81,44 @@ export async function fetchFile(
         if (!res.ok || !res.body) throw new MoodleError(`HTTP ${res.status} al bajar el archivo`);
 
         return { bytes: await readWithLimit(res, maxBytes), contentType };
+    }
+}
+
+/**
+ * Sube archivos al área de borrador del usuario por `webservice/upload.php` y devuelve su `itemid`,
+ * que es lo que piden las funciones que guardan archivos. Todos quedan en el mismo borrador.
+ */
+export async function uploadDraftFiles(
+    session: AulaSession,
+    files: { name: string; bytes: Uint8Array }[],
+): Promise<number> {
+    let token = await session.getToken();
+
+    for (let attempt = 0; ; attempt++) {
+        const form = new FormData();
+        form.set("token", token);
+        form.set("filearea", "draft");
+        form.set("itemid", "0");
+        files.forEach((f, i) => form.set(`file_${i + 1}`, new Blob([new Uint8Array(f.bytes)]), f.name));
+
+        let res: Response;
+        try {
+            res = await fetch(UPLOAD_URL, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
+        } catch (e) {
+            throw new MoodleError(`No se pudo subir el archivo: ${(e as Error).message}`);
+        }
+        if (!res.ok) throw new MoodleError(`HTTP ${res.status} al subir el archivo`);
+
+        // Si sale bien, un registro por archivo; si no, `{ error, errorcode }`.
+        const data = (await res.json()) as { itemid: number }[] | { error?: string; errorcode?: string };
+        if (Array.isArray(data) && data[0]) return data[0].itemid;
+
+        const err = Array.isArray(data) ? {} : data;
+        if (attempt === 0 && err.errorcode && TOKEN_ERRORS.has(err.errorcode)) {
+            token = await session.refreshToken();
+            continue;
+        }
+        throw new MoodleError(err.error ?? "Moodle no aceptó el archivo.", err.errorcode);
     }
 }
 

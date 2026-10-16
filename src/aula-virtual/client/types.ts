@@ -130,6 +130,8 @@ export interface Assignment {
     /** 1: la entrega queda en borrador hasta que se confirma el envío. */
     submissiondrafts: number;
     requiresubmissionstatement: number;
+    /** HTML de la declaración que hay que aceptar al enviar; solo viene si se pide. */
+    submissionstatement?: string;
     teamsubmission: number;
     maxattempts: number;
     configs: { plugin: string; subtype: string; name: string; value: string }[];

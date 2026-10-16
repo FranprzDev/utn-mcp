@@ -58,6 +58,8 @@ export async function viewSubmission(session: AulaSession, courseId: number, mod
         // Con borradores, lo subido no cuenta hasta confirmar el envío.
         requiereConfirmarEnvio: assignment?.submissiondrafts === 1 || undefined,
         requiereDeclaracion: assignment?.requiresubmissionstatement === 1 || undefined,
+        declaracion:
+            (assignment?.requiresubmissionstatement === 1 && htmlToText(assignment.submissionstatement)) || undefined,
         puedeEditar: attempt?.canedit ?? false,
         puedeEnviar: attempt?.cansubmit || undefined,
         bloqueada: attempt?.locked || undefined,

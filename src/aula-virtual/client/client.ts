@@ -124,6 +124,63 @@ export function getSubmissionStatus(session: AulaSession, assignid: number): Pro
     return callWs(session, "mod_assign_get_submission_status", { assignid });
 }
 
+/** Un borrador vacío: el `itemid` que se manda para dejar un área sin archivos. */
+export async function getUnusedDraftItemId(session: AulaSession): Promise<number> {
+    const { itemid } = await callWs<{ itemid: number }>(session, "core_files_get_unused_draft_itemid");
+    return itemid;
+}
+
+/** Moodle no tira excepción cuando no guarda o no envía: lo dice en `warnings`. */
+function throwOnWarnings(warnings: { message: string }[] | undefined, fallback: string) {
+    if (warnings?.length) throw new MoodleError(warnings.map((w) => w.message).join(" ") || fallback);
+}
+
+/**
+ * Guarda la entrega. Cada plugin habilitado reemplaza lo que tenía con lo que se le pasa: el de
+ * archivos toma el borrador `filesItemId` entero y el de texto, `text`.
+ */
+export async function saveSubmission(
+    session: AulaSession,
+    assignmentid: number,
+    data: { filesItemId?: number; text?: { html: string; format: number; itemid: number } },
+): Promise<void> {
+    const params: Record<string, string | number> = { assignmentid };
+    if (data.filesItemId !== undefined) params["plugindata[files_filemanager]"] = data.filesItemId;
+    if (data.text) {
+        params["plugindata[onlinetext_editor][text]"] = data.text.html;
+        params["plugindata[onlinetext_editor][format]"] = data.text.format;
+        params["plugindata[onlinetext_editor][itemid]"] = data.text.itemid;
+    }
+    const warnings = await callWs<{ message: string }[]>(session, "mod_assign_save_submission", params);
+    throwOnWarnings(warnings, "Moodle no guardó la entrega.");
+}
+
+/** Confirma el envío de un borrador. Después ya no se puede editar. */
+export async function submitForGrading(
+    session: AulaSession,
+    assignmentid: number,
+    acceptStatement: boolean,
+): Promise<void> {
+    const warnings = await callWs<{ message: string }[]>(session, "mod_assign_submit_for_grading", {
+        assignmentid,
+        acceptsubmissionstatement: acceptStatement ? 1 : 0,
+    });
+    throwOnWarnings(warnings, "Moodle no envió la entrega.");
+}
+
+/**
+ * Vacía la entrega del usuario (o la de su grupo). Es la única forma de dejarla sin nada:
+ * mod_assign_save_submission rechaza una entrega vacía.
+ */
+export async function removeSubmission(session: AulaSession, assignid: number): Promise<void> {
+    const { userid } = await getSiteInfo(session);
+    const warnings = await callWs<{ message: string }[]>(session, "mod_assign_remove_submission", {
+        userid,
+        assignid,
+    });
+    throwOnWarnings(warnings, "Moodle no quitó la entrega.");
+}
+
 // --- Elecciones (choice) y selección de grupos (choicegroup) ---
 
 export async function getChoices(session: AulaSession, courseId: number): Promise<Choice[]> {

@@ -23,6 +23,8 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_forum_post` | Abre un hilo en un foro o responde en una discusión. |
 | `aula_forum_edit_post` | Edita una publicación tuya. |
 | `aula_forum_delete_post` | Borra una publicación tuya. |
+| `aula_assign_submit` | Entrega una tarea: sube archivos de tu compu, escribe el texto en línea y confirma el envío. |
+| `aula_assign_upload_link` | Solo en modo HTTP: un link para subir los archivos de una entrega, que usa el agente con `curl` o vos desde el navegador. |
 | `aula_choice_answer` | Responde una elección o te anota en un grupo. |
 | `aula_send_message` | Manda un mensaje privado a un docente o compañero. |
 | `aula_calendar_add_event` | Agrega un recordatorio a tu calendario del aula. |
@@ -118,15 +120,23 @@ utn-mcp login
 y en la config del cliente usás `"command": "utn-mcp"` sin argumentos.
 
 ### Modo HTTP (opcional)
+Necesita Node 22.13 o más nuevo. Primero, una vez:
+```bash
+npx -y utn-mcp login --http
+```
+Te muestra un token: configurá tu cliente MCP para que mande el header `Authorization: Bearer <token>`. Después:
 ```bash
 npx -y utn-mcp --http --port 3000
 ```
 Levanta el servidor en `http://127.0.0.1:3000/mcp`, solo accesible desde tu propia máquina. Tenés que dejar la terminal abierta mientras lo uses.
 
+En este modo el servidor no lee archivos de tu disco: para entregar, el agente pide un link con `aula_assign_upload_link` y sube ahí los archivos con `curl` si tiene terminal, o te pasa el link para que los elijas desde el navegador. Si el servidor se publica detrás de otra dirección, definí `UTN_MCP_PUBLIC_URL` para que los links la usen.
+
 ## Dónde se guardan tus datos
 Todo queda en tu computadora:
 - **Usuario y contraseña**: en el gestor de credenciales del sistema (Windows Credential Manager, Keychain en macOS, Secret Service en Linux).
 - **Token del aula virtual y cookies de sesión**: en `%APPDATA%\utn-mcp\session.json` (Windows) o `~/.config/utn-mcp/session.json` (Linux y macOS).
+- **En modo HTTP**: la sesión va cifrada en `utn-mcp.db`, en la misma carpeta, con la clave de `store.key` (o la de `UTN_MCP_KEY`). Del token del cliente solo se guarda el hash.
 
 En Linux sin gestor de credenciales (servidores, Docker, WSL) podés definir las variables de entorno `UTN_USER` y `UTN_PASS` en lugar de usar `login`.
 

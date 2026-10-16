@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
+import type { FileSource } from "../shared/uploads.js";
 import { getSiteInfo } from "./client/client.js";
 import type { AulaSession } from "./client/session.js";
 import {
@@ -13,6 +14,7 @@ import {
 import { ROOT } from "./format/address.js";
 import { readAulaFile } from "./format/files.js";
 import { open } from "./format/navigate.js";
+import { createUploadLink, submitAssignment } from "./format/submission.js";
 
 // JSON compacto: indentar estas respuestas cuesta ~25% más de contexto y no se lee mejor.
 const json = (data: unknown) => ({
@@ -27,7 +29,7 @@ const failure = (e: unknown) => ({
 /** Para que el cliente distinga las tools que leen de las que cambian algo en el aula. */
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
 
-export function registerAulaVirtualTools(server: McpServer, session: AulaSession) {
+export function registerAulaVirtualTools(server: McpServer, session: AulaSession, files: FileSource) {
     server.registerTool(
         "aula_get_site_info",
         {
@@ -320,6 +322,134 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
         async ({ usuarioId, mensaje }) => {
             try {
                 return json(await sendMessage(session, usuarioId, mensaje));
+            } catch (e) {
+                return failure(e);
+            }
+        },
+    );
+
+    // En STDIO el servidor lee el archivo del disco del usuario; en HTTP no puede, porque puede estar en
+    // otra máquina: los archivos llegan por un link de subida, que usa el agente o el usuario.
+    const newFiles = files.local
+        ? "Los archivos nuevos se pasan en `archivos` con su ruta absoluta en la compu del usuario."
+        : "Los archivos nuevos no van en la llamada: primero pedí un link con aula_assign_upload_link, " +
+          "subilos ahí y después pasá su id en `subida`.";
+
+    if (!files.local) {
+        const { inbox, owner } = files;
+        server.registerTool(
+            "aula_assign_upload_link",
+            {
+                description:
+                    "Genera un link de un solo uso para subir los archivos de una entrega, que después se " +
+                    "entregan con aula_assign_submit pasando el `subida` que devuelve. Vence en 30 minutos.\n\n" +
+                    "Cómo subirlos:\n" +
+                    "- Si podés ejecutar comandos y tenés el archivo (por ejemplo, uno que el usuario adjuntó o " +
+                    "que está en su compu), subilo vos con el comando de `conTerminal`, cambiando la ruta. Va un " +
+                    '`-F "archivos=@..."` por archivo, todos en el mismo comando. Responde JSON con lo recibido.\n' +
+                    "- Si no, pasale el `url` al usuario: se abre en el navegador, también en el celu, y elige " +
+                    "los archivos ahí. Esperá a que te diga que los subió.\n\n" +
+                    "Subir al link no entrega nada; una subida nueva al mismo link reemplaza la anterior. " +
+                    "`acepta` trae los límites de la tarea.",
+                inputSchema: z.object({
+                    direccion: z
+                        .string()
+                        .describe('Dirección de la tarea, de aula_open. Ej: "/curso/29487/mod/1729138".'),
+                }),
+                annotations: { readOnlyHint: true, openWorldHint: false },
+            },
+            async ({ direccion }) => {
+                try {
+                    return json(await createUploadLink(session, direccion, inbox, owner));
+                } catch (e) {
+                    return failure(e);
+                }
+            },
+        );
+    }
+
+    const submitSchema = z.object({
+        direccion: z.string().describe('Dirección de la tarea, de aula_open. Ej: "/curso/29487/mod/1729138".'),
+        archivos: z
+            .array(z.string())
+            .optional()
+            .describe(
+                files.local
+                    ? "Lista final de archivos. Cada uno es la ruta absoluta de un archivo en la compu del " +
+                          "usuario o la `url` de uno que ya está en la entrega. Lista vacía: quita todos. " +
+                          'Ej: ["C:\\Users\\ana\\Documents\\TP3.pdf"].'
+                    : "Lista final de los archivos que ya están en la entrega, por su `url` de aula_open; los " +
+                          "de `subida` se suman. Lista vacía: quita los que estaban. " +
+                          'Ej: ["https://aulasvirtuales.frba.utn.edu.ar/pluginfile.php/123/assignsubmission_file/submission_files/456/TP3.pdf"].',
+            ),
+        texto: z
+            .string()
+            .optional()
+            .describe(
+                "Texto en línea completo, en texto plano; reemplaza al anterior. Una línea en blanco " +
+                    'separa párrafos. Ej: "Link al repositorio: https://github.com/ana/tp3"',
+            ),
+        enviar: z
+            .boolean()
+            .optional()
+            .describe(
+                "Solo en tareas con borradores: confirmar el envío para que cuente como entregada. Por " +
+                    "defecto, true. Ej: false para dejarla como borrador.",
+            ),
+        aceptoDeclaracion: z
+            .boolean()
+            .optional()
+            .describe(
+                "true si el usuario aceptó la `declaracion` de la tarea. Solo hace falta si la tarea la pide. Ej: true.",
+            ),
+    });
+    const httpSubmitSchema = submitSchema.extend({
+        subida: z
+            .string()
+            .optional()
+            .describe(
+                "`subida` de aula_assign_upload_link, ya usado: sus archivos se suman a la entrega. " +
+                    'Ej: "q3Vx9kP2mW7tR1yZ8nB4cD6fG0hJ5lA".',
+            ),
+    });
+
+    server.registerTool(
+        "aula_assign_submit",
+        {
+            description:
+                "Entrega una tarea (assign) del aula virtual: sube archivos, escribe el texto en línea o las " +
+                "dos cosas, según lo que acepte la tarea. Antes, abrila con aula_open: `entrega` dice qué " +
+                "acepta (`acepta`, con tipos, cantidad y tamaño), si `puedeEditar` y lo que ya está subido.\n\n" +
+                newFiles +
+                " `archivos` es la lista final y reemplaza lo anterior: para sumar uno sin perder los otros, " +
+                "incluí la `url` de cada archivo que ya está en la entrega. Si no pasás `archivos`, quedan " +
+                "los que estaban; lo mismo con `texto`.\n\n" +
+                "Si la tarea no usa borradores, guardar ya es entregar. Si los usa (`requiereConfirmarEnvio`), " +
+                "la tool además confirma el envío, salvo con `enviar: false`; una vez enviada, en general no se " +
+                "puede cambiar. Con `declaracion`, el usuario tiene que aceptarla (`aceptoDeclaracion`). " +
+                "Devuelve cómo quedó la entrega." +
+                CONFIRM_FIRST +
+                " Incluí la tarea, los nombres de los archivos y si se confirma el envío.",
+            // `subida` existe solo en HTTP; el cast es para que el handler la vea en los dos modos.
+            inputSchema: (files.local ? submitSchema : httpSubmitSchema) as typeof httpSubmitSchema,
+            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+        },
+        async ({ direccion, archivos, subida, texto, enviar, aceptoDeclaracion }) => {
+            try {
+                return json(
+                    await submitAssignment(
+                        session,
+                        direccion,
+                        {
+                            files: archivos,
+                            upload: subida,
+                            text: texto,
+                            send: enviar ?? true,
+                            acceptStatement: aceptoDeclaracion ?? false,
+                        },
+                        files,
+                    ),
+                );
             } catch (e) {
                 return failure(e);
             }
