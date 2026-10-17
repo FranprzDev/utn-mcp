@@ -15,7 +15,7 @@ import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcon
 import type { AccessPolicy } from "./oauth/access.js";
 import { mountAdmin } from "./oauth/admin.js";
 import type { RedirectAllowlist } from "./oauth/redirects.js";
-import { mountOAuth } from "./oauth/server.js";
+import { cors, mountOAuth } from "./oauth/server.js";
 import { logger } from "./shared/logger.js";
 import type { SessionStore } from "./shared/store/session-store.js";
 import { escapeHtml, page } from "./shared/pages.js";
@@ -116,8 +116,13 @@ export function startHttpServer(factory: McpServerFactory, options: HttpOptions,
         }
     };
 
+    // Publicado, /mcp acepta cualquier origen: se autentica con el bearer, que el navegador no manda solo
+    // (no hay cookies), así que una página ajena no lo puede usar en nombre de nadie. Hay clientes que lo
+    // llaman desde su web, como Grok. En local sigue el chequeo de Origin, contra DNS rebinding.
+    const mcpOrigin = publicUrl ? cors : sameOrigin;
+    app.options("/mcp", mcpOrigin, (_req, res) => void res.sendStatus(204));
     // Sin express.json(): el handler lee el body por su cuenta.
-    app.all("/mcp", sameOrigin, requireToken, toNodeHandler(handler));
+    app.all("/mcp", mcpOrigin, requireToken, toNodeHandler(handler));
     // Sin bearer: el id del link es el secreto, y lo abre un navegador o un `curl` que no lo tienen.
     app.get("/subir/:id", sameOrigin, (req, res) => {
         const upload = inbox.get(String(req.params.id));

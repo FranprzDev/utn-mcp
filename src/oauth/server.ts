@@ -303,10 +303,17 @@ async function issueTokens(store: SessionStore, userId: number, clientId: string
 const pkceChallenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
 
 /** Los endpoints que llaman los clientes desde el navegador (como el MCP Inspector) aceptan cualquier origen. */
-const cors: RequestHandler = (_req, res, next) => {
+export const cors: RequestHandler = (_req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "content-type, authorization, mcp-protocol-version");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader(
+        "Access-Control-Allow-Headers",
+        "content-type, authorization, mcp-protocol-version, mcp-session-id, last-event-id",
+    );
+    // Sin exponerlos, el navegador no deja leer el 401 que arranca el OAuth ni la sesión del transporte.
+    res.setHeader("Access-Control-Expose-Headers", "www-authenticate, mcp-session-id");
+    // Un día, en segundos: el navegador no repite el preflight en cada request.
+    res.setHeader("Access-Control-Max-Age", "86400");
     next();
 };
 
