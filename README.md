@@ -107,7 +107,7 @@ mcp_servers:
 }
 ```
 
-**ChatGPT**: solo se conecta a servidores MCP remotos por HTTPS, así que necesita un servidor en modo HTTP publicado en internet (ver [Hostearlo para otros](#hostearlo-para-otros)). Se agrega como conector desde *Configuración → Apps y conectores*, con el modo desarrollador activado.
+**ChatGPT**: solo se conecta a servidores MCP remotos por HTTPS, así que necesita un servidor en modo HTTP publicado en internet (ver [Hostearlo para otros](#hostearlo-para-otros)). Se agrega como conector desde *Configuración → Apps y conectores*, con el modo desarrollador activado. Los conectores propios están desde el plan Pro, y ahí solo con las herramientas de lectura; para usar también las de escritura (foros, mensajes, entregas) hace falta Business o superior.
 
 **Otros clientes (Windsurf, opencode, etc.)**: cualquier cliente MCP que lance servidores por STDIO sirve con el comando `npx -y utn-mcp`.
 
