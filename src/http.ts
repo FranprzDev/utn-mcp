@@ -60,7 +60,7 @@ const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"];
 export interface HttpOptions {
     host: string;
     port: number;
-    /** Sin barra final, por ejemplo `https://sv.utnmcp.com.ar`. */
+    /** Sin barra final, por ejemplo `https://mcp.tu-dominio.com`. */
     publicUrl?: string;
     /** Quién puede conectarse por OAuth. */
     access: AccessPolicy;

@@ -16,8 +16,8 @@ interface RemoteDecision {
 }
 
 /**
- * La política sale del entorno: con UTN_MCP_ACCESS_URL decide otro servicio (el de suscripciones del
- * que hostea); con UTN_MCP_ALLOWED_EMAILS, una lista; sin ninguna, entra cualquiera con usuario de la UTN.
+ * La política sale del entorno: con UTN_MCP_ACCESS_URL decide otro servicio;
+ * con UTN_MCP_ALLOWED_EMAILS, una lista; sin ninguna, entra cualquiera con usuario de la UTN.
  */
 export function accessPolicyFromEnv(env: NodeJS.ProcessEnv = process.env): AccessPolicy {
     if (env.UTN_MCP_ACCESS_URL) return remotePolicy(env.UTN_MCP_ACCESS_URL, env.UTN_MCP_ACCESS_SECRET);

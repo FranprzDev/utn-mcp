@@ -135,14 +135,14 @@ En este modo el servidor no lee archivos de tu disco: para entregar, el agente p
 ### Hostearlo para otros
 En modo HTTP el servidor también es servidor de autorización OAuth: un cliente MCP (Claude, ChatGPT) que se conecta a `https://tu-dominio/mcp` recibe un 401, descubre el OAuth y abre una página donde el alumno entra con su usuario de la UTN. Ese login vincula su aula: la contraseña se usa una sola vez para sacar el token de Moodle y **no se guarda**. Cuando la sesión del aula vence, el agente le pasa el link de `/login` para renovarla, sin reconectar el cliente.
 
-Quién puede entrar lo decidís vos: con `UTN_MCP_ALLOWED_EMAILS` (una lista), o con `UTN_MCP_ACCESS_URL`, que apunta a un servicio tuyo (por ejemplo, el de suscripciones). El servidor le hace `POST` con `{ "email", "usuario" }` y el header `Authorization: Bearer <UTN_MCP_ACCESS_SECRET>`, y espera `{ "permitido": true }` o `{ "permitido": false, "motivo": "...", "url": "..." }`. Se consulta al conectar y en cada renovación del token (cada hora), así que una baja se aplica sola.
+Quién puede entrar lo decidís vos: con `UTN_MCP_ALLOWED_EMAILS` (una lista), o con `UTN_MCP_ACCESS_URL`, que apunta a un servicio tuyo. El servidor le hace `POST` con `{ "email", "usuario" }` y el header `Authorization: Bearer <UTN_MCP_ACCESS_SECRET>`, y espera `{ "permitido": true }` o `{ "permitido": false, "motivo": "...", "url": "..." }`. Se consulta al conectar y en cada renovación del token (cada hora), así que una baja se aplica sola.
 
 La configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](.env.example)):
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
 | `HOST`, `PORT` | Dónde escucha. | `127.0.0.1`, `3000` |
-| `UTN_MCP_PUBLIC_URL` | Dirección pública (`https://sv.utnmcp.com.ar`). Es el issuer del OAuth, la base de los links de subida y el único host, además de localhost, que se acepta en `Host` y `Origin`. | `http://127.0.0.1:<PORT>` |
+| `UTN_MCP_PUBLIC_URL` | Dirección pública (`https://mcp.tu-dominio.com`). Es el issuer del OAuth, la base de los links de subida y el único host, además de localhost, que se acepta en `Host` y `Origin`. | `http://127.0.0.1:<PORT>` |
 | `UTN_MCP_ACCESS_URL`, `UTN_MCP_ACCESS_SECRET` | Servicio que decide quién puede entrar. | — |
 | `UTN_MCP_ALLOWED_EMAILS` | Emails o dominios (`@frba.utn.edu.ar`) habilitados, separados por coma, si no hay `UTN_MCP_ACCESS_URL`. | Entra cualquiera con usuario de la UTN |
 | `UTN_MCP_LOGIN_URL` | Página donde el usuario renueva su sesión del aula; el agente se la pasa. | `<UTN_MCP_PUBLIC_URL>/login` |

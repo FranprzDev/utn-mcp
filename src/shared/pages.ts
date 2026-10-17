@@ -1,6 +1,6 @@
 /**
- * Colores de utnmcp.com.ar: papel milimetrado, tinta y un azul de acento. Oscuro salvo que el sistema
- * pida claro, como la web. Sin fuentes externas: la página de login recibe contraseñas.
+ * Los colores del sitio del proyecto: papel milimetrado, tinta y un azul de acento. Oscuro salvo que
+ * el sistema pida claro. Sin fuentes externas: la página de login recibe contraseñas.
  */
 const STYLE = `
 :root{--paper:#0a0b0d;--ink:#e9e7e0;--muted:#8b8a84;--line:rgb(233 231 224/.055);--line-faint:rgb(233 231 224/.025);
@@ -41,7 +41,7 @@ ul{padding-left:1.2rem}
 ::selection{background:var(--accent);color:var(--paper)}
 `.replace(/\n/g, "");
 
-/** El emblema de utnmcp.com.ar: el de la UTN con "MCP" en lugar de "UTN". */
+/** El emblema del proyecto: el de la UTN con "MCP" en lugar de "UTN". */
 const MARK =
     '<svg viewBox="0 0 100 132" fill="none" aria-hidden="true"><g stroke="currentColor" stroke-width="11">' +
     '<path d="M50 0v100M0 50h100"/><path d="M19 0v19a11 11 0 0 0 11 11h40a11 11 0 0 0 11-11V0"/>' +
@@ -50,7 +50,7 @@ const MARK =
     'font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="29" fill="currentColor">MCP</text></svg>';
 
 /**
- * Página mínima con el estilo de la web: se abre desde el celu, así que nada más que lo necesario.
+ * Página mínima con el estilo del sitio del proyecto: se abre desde el celu, así que nada más que lo necesario.
  * `kicker` es la etiqueta chica arriba del título.
  */
 export function page(title: string, body: string, kicker = "UTN-MCP"): string {
