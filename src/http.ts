@@ -13,6 +13,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
 import type { AccessPolicy } from "./oauth/access.js";
+import { mountAdmin } from "./oauth/admin.js";
 import { mountOAuth } from "./oauth/server.js";
 import { logger } from "./shared/logger.js";
 import type { SessionStore } from "./shared/store/session-store.js";
@@ -64,11 +65,13 @@ export interface HttpOptions {
     publicUrl?: string;
     /** Quién puede conectarse por OAuth. */
     access: AccessPolicy;
+    /** Con él se habilita la API de /admin (ver `mountAdmin`). */
+    adminSecret?: string;
 }
 
 /** El factory recibe en `ctx.authInfo` el token ya validado, con el usuario; de ahí arma su sesión. */
 export function startHttpServer(factory: McpServerFactory, options: HttpOptions, store: SessionStore, inbox: UploadInbox) {
-    const { host, port, publicUrl, access } = options;
+    const { host, port, publicUrl, access, adminSecret } = options;
     const handler = createMcpHandler(factory, { onerror: (e) => logger.error(e.message) });
     const verifier = storeVerifier(store);
     const app = express();
@@ -90,6 +93,8 @@ export function startHttpServer(factory: McpServerFactory, options: HttpOptions,
         access,
         sameOrigin,
     });
+
+    if (adminSecret) mountAdmin(app, store, adminSecret);
 
     const requireToken: RequestHandler = async (req, res, next) => {
         try {

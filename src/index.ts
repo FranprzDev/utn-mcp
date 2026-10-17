@@ -64,7 +64,14 @@ async function main() {
             const aula = new StoredAulaSession(store, userId, loginUrl);
             return createServer(aula, { local: false, inbox, owner: String(userId) });
         };
-        startHttpServer(factory, { host: values.host, port, publicUrl, access: accessPolicyFromEnv() }, store, inbox);
+        const options = {
+            host: values.host,
+            port,
+            publicUrl,
+            access: accessPolicyFromEnv(),
+            adminSecret: process.env.UTN_MCP_ADMIN_SECRET || undefined,
+        };
+        startHttpServer(factory, options, store, inbox);
     } else {
         // STDIO: un solo usuario, el de la compu, con la misma sesión para todas las conexiones.
         const aula = new LocalSession();

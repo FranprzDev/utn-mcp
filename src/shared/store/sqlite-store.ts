@@ -3,7 +3,14 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { storeFile, storeKeyFile } from "../paths.js";
-import type { IssuedToken, RegisteredClient, SessionStore, StoredUser, TokenKind } from "./session-store.js";
+import type {
+    ConnectedClient,
+    IssuedToken,
+    RegisteredClient,
+    SessionStore,
+    StoredUser,
+    TokenKind,
+} from "./session-store.js";
 
 const SCHEMA = `
     CREATE TABLE IF NOT EXISTS users (
@@ -86,6 +93,13 @@ export class SqliteStore implements SessionStore {
         return row.id;
     }
 
+    async findUserByEmail(email: string): Promise<StoredUser | null> {
+        const row = this.db.prepare("SELECT id, utn_username, email FROM users WHERE email = ?").get(
+            email.trim().toLowerCase(),
+        ) as { id: number; utn_username: string; email: string | null } | undefined;
+        return row ? { id: row.id, utnUsername: row.utn_username, email: row.email } : null;
+    }
+
     async findUser(userId: number): Promise<StoredUser | null> {
         const row = this.db.prepare("SELECT id, utn_username, email FROM users WHERE id = ?").get(userId) as
             | { id: number; utn_username: string; email: string | null }
@@ -158,6 +172,29 @@ export class SqliteStore implements SessionStore {
             .get(clientId) as { client_id: string; client_name: string | null; redirect_uris: string } | undefined;
         if (!row) return null;
         return { clientId: row.client_id, clientName: row.client_name, redirectUris: JSON.parse(row.redirect_uris) };
+    }
+
+    async sessionUpdatedAt(userId: number, platform: string): Promise<number | null> {
+        const row = this.db
+            .prepare("SELECT updated_at FROM platform_sessions WHERE user_id = ? AND platform = ?")
+            .get(userId, platform) as { updated_at: number } | undefined;
+        return row?.updated_at ?? null;
+    }
+
+    async listConnectedClients(userId: number): Promise<ConnectedClient[]> {
+        const rows = this.db
+            .prepare(
+                "SELECT t.client_id, c.client_name, MAX(t.created_at) AS last_token_at FROM tokens t " +
+                    "LEFT JOIN oauth_clients c ON c.client_id = t.client_id " +
+                    "WHERE t.user_id = ? AND t.client_id IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > ?) " +
+                    "GROUP BY t.client_id ORDER BY last_token_at DESC",
+            )
+            .all(userId, now()) as { client_id: string; client_name: string | null; last_token_at: number }[];
+        return rows.map((r) => ({ clientId: r.client_id, clientName: r.client_name, lastTokenAt: r.last_token_at }));
+    }
+
+    async revokeClient(userId: number, clientId: string): Promise<void> {
+        this.db.prepare("DELETE FROM tokens WHERE user_id = ? AND client_id = ?").run(userId, clientId);
     }
 
     /** iv + tag + texto cifrado, en un solo blob. */

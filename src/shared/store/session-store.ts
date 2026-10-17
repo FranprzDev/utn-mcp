@@ -9,6 +9,8 @@ export interface SessionStore {
 
     findUser(userId: number): Promise<StoredUser | null>;
 
+    findUserByEmail(email: string): Promise<StoredUser | null>;
+
     /**
      * Emite un token para el usuario y devuelve el valor en claro: se muestra una sola vez, en la base
      * queda solo el hash. Sin `ttlSeconds` no vence (el token fijo del modo local).
@@ -25,10 +27,27 @@ export interface SessionStore {
 
     saveSession(userId: number, platform: string, data: string): Promise<void>;
 
+    /** Cuándo se guardó por última vez la sesión, en segundos desde epoch; null si no hay. */
+    sessionUpdatedAt(userId: number, platform: string): Promise<number | null>;
+
     /** Clientes OAuth registrados por registro dinámico (RFC 7591). */
     saveClient(client: RegisteredClient): Promise<void>;
 
     findClient(clientId: string): Promise<RegisteredClient | null>;
+
+    /** Los clientes que todavía tienen un token vigente del usuario: las apps que tiene conectadas. */
+    listConnectedClients(userId: number): Promise<ConnectedClient[]>;
+
+    /** Borra todos los tokens del usuario para ese cliente: la app queda desconectada. */
+    revokeClient(userId: number, clientId: string): Promise<void>;
+}
+
+export interface ConnectedClient {
+    clientId: string;
+    /** El que mandó la app al registrarse; null para el token fijo de `utn-mcp login --http`. */
+    clientName: string | null;
+    /** Cuándo se emitió su token más nuevo, en segundos desde epoch: los refresh rotan con el uso. */
+    lastTokenAt: number;
 }
 
 export interface StoredUser {
