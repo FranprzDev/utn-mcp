@@ -130,7 +130,16 @@ npx -y utn-mcp --http --port 3000
 ```
 Levanta el servidor en `http://127.0.0.1:3000/mcp`, solo accesible desde tu propia máquina. Tenés que dejar la terminal abierta mientras lo uses.
 
-En este modo el servidor no lee archivos de tu disco: para entregar, el agente pide un link con `aula_assign_upload_link` y sube ahí los archivos con `curl` si tiene terminal, o te pasa el link para que los elijas desde el navegador. Si el servidor se publica detrás de otra dirección, definí `UTN_MCP_PUBLIC_URL` para que los links la usen.
+En este modo el servidor no lee archivos de tu disco: para entregar, el agente pide un link con `aula_assign_upload_link` y sube ahí los archivos con `curl` si tiene terminal, o te pasa el link para que los elijas desde el navegador.
+
+Para hostearlo, la configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](.env.example)):
+
+| Variable | Para qué | Por defecto |
+|---|---|---|
+| `HOST`, `PORT` | Dónde escucha. Detrás de un reverse proxy, `HOST=0.0.0.0`. | `127.0.0.1`, `3000` |
+| `UTN_MCP_PUBLIC_URL` | Dirección pública (`https://sv.utnmcp.com.ar`). La usan los links de subida, y es el único host, además de localhost, que se acepta en `Host` y `Origin`. | — |
+| `UTN_MCP_LOGIN_URL` | Página donde el usuario vuelve a iniciar sesión cuando su sesión del aula vence; el agente se la pasa. | Indica correr `utn-mcp login --http` |
+| `UTN_MCP_DB`, `UTN_MCP_KEY` | Base de sesiones y su clave de cifrado (32 bytes en base64). | En la carpeta de config |
 
 ## Dónde se guardan tus datos
 Todo queda en tu computadora:

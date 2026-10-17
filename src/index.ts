@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -14,15 +15,25 @@ import { UploadInbox } from "./shared/uploads.js";
 
 const USAGE = `Uso:
   utn-mcp                 servidor MCP por STDIO (lo lanza el cliente)
-  utn-mcp --http [--port N]  servidor MCP por HTTP en 127.0.0.1 (por defecto 3000)
+  utn-mcp --http [--host H] [--port N]  servidor MCP por HTTP (por defecto 127.0.0.1:3000)
   utn-mcp login           guardar credenciales de la UTN y obtener el primer token
-  utn-mcp login --http    lo mismo, para el modo HTTP: guarda la sesión y emite el token del cliente`;
+  utn-mcp login --http    lo mismo, para el modo HTTP: guarda la sesión y emite el token del cliente
+
+Si hay un .env en la carpeta actual, se lee al arrancar (ver .env.example).`;
+
+/** Lee el `.env` de la carpeta actual, si hay. Lo que ya está definido en el entorno no se pisa. */
+function loadDotenv() {
+    if (existsSync(".env")) process.loadEnvFile(".env");
+}
 
 async function main() {
+    loadDotenv();
     const { values, positionals } = parseArgs({
         allowPositionals: true,
         options: {
             http: { type: "boolean", default: false },
+            // Por defecto solo desde esta máquina; hosteado, `0.0.0.0` detrás del reverse proxy.
+            host: { type: "string", default: process.env.HOST ?? "127.0.0.1" },
             port: { type: "string", default: process.env.PORT ?? "3000" },
             help: { type: "boolean", short: "h", default: false },
         },
@@ -41,13 +52,16 @@ async function main() {
         // Cada request trae el token de un usuario del store y se arma con su sesión. Los archivos
         // llegan por links de subida: el servidor puede no estar en la compu de quien entrega.
         const port = Number(values.port);
+        const publicUrl = process.env.UTN_MCP_PUBLIC_URL?.replace(/\/+$/, "") || undefined;
+        const loginUrl = process.env.UTN_MCP_LOGIN_URL || undefined;
         const store = await SqliteStore.open();
-        const inbox = new UploadInbox(process.env.UTN_MCP_PUBLIC_URL ?? `http://127.0.0.1:${port}`);
+        const inbox = new UploadInbox(publicUrl ?? `http://127.0.0.1:${port}`);
         const factory = (ctx: { authInfo?: AuthInfo }) => {
             const userId = userIdOf(ctx.authInfo);
-            return createServer(new StoredAulaSession(store, userId), { local: false, inbox, owner: String(userId) });
+            const aula = new StoredAulaSession(store, userId, loginUrl);
+            return createServer(aula, { local: false, inbox, owner: String(userId) });
         };
-        startHttpServer(factory, port, store, inbox);
+        startHttpServer(factory, { host: values.host, port, publicUrl }, store, inbox);
     } else {
         // STDIO: un solo usuario, el de la compu, con la misma sesión para todas las conexiones.
         const aula = new LocalSession();

@@ -11,7 +11,7 @@ import {
     type McpServerFactory,
     type OAuthTokenVerifier,
 } from "@modelcontextprotocol/server";
-import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from "@modelcontextprotocol/node";
+import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
 import { logger } from "./shared/logger.js";
 import type { SessionStore } from "./shared/store/session-store.js";
 import { MAX_UPLOAD_BYTES, formatSize, type UploadInbox, type UploadLimits } from "./shared/uploads.js";
@@ -51,8 +51,18 @@ function storeVerifier(store: SessionStore): OAuthTokenVerifier {
     };
 }
 
+const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"];
+
+/** Dónde escucha el servidor y, si está publicado, desde qué dirección lo ven los clientes. */
+export interface HttpOptions {
+    host: string;
+    port: number;
+    /** Sin barra final, por ejemplo `https://sv.utnmcp.com.ar`. */
+    publicUrl?: string;
+}
+
 /** El factory recibe en `ctx.authInfo` el token ya validado, con el usuario; de ahí arma su sesión. */
-export function startHttpServer(factory: McpServerFactory, port: number, store: SessionStore, inbox: UploadInbox) {
+export function startHttpServer(factory: McpServerFactory, options: HttpOptions, store: SessionStore, inbox: UploadInbox) {
     const handler = createMcpHandler(factory, { onerror: (e) => logger.error(e.message) });
     const verifier = storeVerifier(store);
 
@@ -69,9 +79,16 @@ export function startHttpServer(factory: McpServerFactory, port: number, store: 
         }
     };
 
+    // Contra DNS rebinding: solo se aceptan los hosts de esta máquina y el de la URL pública.
+    const { host, port, publicUrl } = options;
+    const allowed = publicUrl ? [...LOOPBACK, new URL(publicUrl).hostname] : LOOPBACK;
+    if (!publicUrl && !LOOPBACK.includes(host)) {
+        logger.warn(`Escuchando en ${host} sin UTN_MCP_PUBLIC_URL: se rechazan los requests que no lleguen como localhost.`);
+    }
+
     const app = express();
-    app.use(asMiddleware(localhostHostValidation()));
-    app.use(asMiddleware(localhostOriginValidation()));
+    app.use(asMiddleware(hostHeaderValidation(allowed)));
+    app.use(asMiddleware(originValidation(allowed)));
     // Sin express.json(): el handler lee el body por su cuenta.
     app.all("/mcp", requireToken, toNodeHandler(handler));
     // Sin bearer: el id del link es el secreto, y lo abre un navegador o un `curl` que no lo tienen.
@@ -82,8 +99,9 @@ export function startHttpServer(factory: McpServerFactory, port: number, store: 
     });
     app.post("/subir/:id", (req, res) => receiveUpload(inbox, req, res));
 
-    app.listen(port, "127.0.0.1", () => {
-        logger.info(`Servidor MCP escuchando en http://127.0.0.1:${port}/mcp`);
+    app.listen(port, host, () => {
+        logger.info(`Servidor MCP escuchando en http://${host}:${port}/mcp`);
+        if (publicUrl) logger.info(`Publicado en ${publicUrl}/mcp`);
     });
 }
 

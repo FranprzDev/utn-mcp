@@ -22,9 +22,11 @@ export interface StoredAulaData {
 export class StoredAulaSession implements AulaSession {
     private refreshing: Promise<string> | null = null;
 
+    /** `loginUrl` es la página donde el usuario vuelve a iniciar sesión, si el servidor tiene una. */
     constructor(
         private readonly store: SessionStore,
         private readonly userId: number,
+        private readonly loginUrl?: string,
     ) {}
 
     async getToken(): Promise<string> {
@@ -51,7 +53,7 @@ export class StoredAulaSession implements AulaSession {
             token = await fetchToken(jar, own);
         } catch (e) {
             if (e instanceof LoginRequiredError) {
-                throw new LoginRequiredError("La sesión del aula venció: volvé a iniciar sesión (`utn-mcp login --http`).");
+                throw this.loginRequired("La sesión del aula venció.");
             }
             throw e;
         }
@@ -62,7 +64,15 @@ export class StoredAulaSession implements AulaSession {
 
     private async read(): Promise<StoredAulaData> {
         const raw = await this.store.loadSession(this.userId, AULA_PLATFORM);
-        if (!raw) throw new LoginRequiredError("No hay sesión del aula para este usuario: corré `utn-mcp login --http`.");
+        if (!raw) throw this.loginRequired("No hay sesión del aula para este usuario.");
         return JSON.parse(raw) as StoredAulaData;
+    }
+
+    /** Hosteado, el usuario vuelve a entrar por la página del servidor; sin ella, por el CLI. */
+    private loginRequired(reason: string): LoginRequiredError {
+        const next = this.loginUrl
+            ? `Pedile al usuario que vuelva a iniciar sesión en ${this.loginUrl} y después reintentá.`
+            : "Volvé a iniciar sesión con `utn-mcp login --http` en la máquina del servidor.";
+        return new LoginRequiredError(`${reason} ${next}`);
     }
 }
