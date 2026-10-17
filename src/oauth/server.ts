@@ -317,5 +317,6 @@ function loginPage(o: { action: string; pendingId?: string; clientName?: string 
             `<button type="submit">Entrar</button></form>` +
             "<p class=nota>La contraseña se usa una sola vez para entrar al aula y no se guarda. " +
             'El código es abierto: <a href="https://github.com/nialvape/utn-mcp">github.com/nialvape/utn-mcp</a>.</p>',
+        o.pendingId ? "Conectar app · Aula Virtual" : "Renovar sesión · Aula Virtual",
     );
 }
