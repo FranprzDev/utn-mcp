@@ -9,6 +9,7 @@ import { StoredAulaSession } from "./aula-virtual/client/stored-session.js";
 import { runLogin } from "./aula-virtual/login.js";
 import { startHttpServer, userIdOf } from "./http.js";
 import { accessPolicyFromEnv } from "./oauth/access.js";
+import { redirectAllowlistFromEnv } from "./oauth/redirects.js";
 import { createServer } from "./server.js";
 import { logger } from "./shared/logger.js";
 import { SqliteStore } from "./shared/store/sqlite-store.js";
@@ -69,6 +70,7 @@ async function main() {
             port,
             publicUrl,
             access: accessPolicyFromEnv(),
+            redirects: redirectAllowlistFromEnv(),
             adminSecret: process.env.UTN_MCP_ADMIN_SECRET || undefined,
         };
         startHttpServer(factory, options, store, inbox);

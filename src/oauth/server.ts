@@ -13,6 +13,7 @@ import { escapeHtml, page } from "../shared/pages.js";
 import type { SessionStore } from "../shared/store/session-store.js";
 import type { AccessPolicy } from "./access.js";
 import { Expiring, RateLimiter } from "./expiring.js";
+import { describeRedirect, redirectTrust, type RedirectAllowlist } from "./redirects.js";
 
 /** Duración del access token, en segundos: una baja de acceso se aplica a más tardar en este tiempo. */
 const ACCESS_TTL = 60 * 60;
@@ -25,8 +26,9 @@ const PENDING_TTL_MS = 10 * 60_000;
 /** Intentos de login por IP cada 15 minutos: que el servidor no sirva para probar contraseñas contra el SSO. */
 const LOGIN_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 15 * 60_000;
-/** Esquemas de redirect_uri que nunca aceptamos. */
-const FORBIDDEN_SCHEMES = new Set(["javascript:", "data:", "file:", "vbscript:"]);
+/** Registros de clientes por IP cada hora. */
+const REGISTER_ATTEMPTS = 20;
+const REGISTER_WINDOW_MS = 60 * 60_000;
 
 export interface OAuthOptions {
     /** URL base del servidor, sin barra final: es el issuer y de ahí salen los endpoints. */
@@ -35,6 +37,8 @@ export interface OAuthOptions {
     access: AccessPolicy;
     /** Rechaza los POST de formularios que vengan de otro origen. */
     sameOrigin: RequestHandler;
+    /** A dónde puede volver el navegador con el code. */
+    redirects: RedirectAllowlist;
 }
 
 /** Un pedido de `/authorize` esperando que el usuario entre con la UTN. */
@@ -42,6 +46,8 @@ interface PendingAuthorization {
     clientId: string;
     clientName: string | null;
     redirectUri: string;
+    /** Vuelve a un sitio que no es de un cliente conocido: el usuario tiene que aceptar el aviso. */
+    unknownRedirect: boolean;
     codeChallenge: string;
     state?: string;
     resource?: string;
@@ -59,7 +65,7 @@ interface IssuedCode {
  * clientes públicos. El usuario se identifica con la UTN, y ese mismo login vincula su aula: la
  * contraseña se usa una vez y no se guarda. Devuelve la URL de la metadata del recurso, que va en el 401.
  */
-export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: OAuthOptions): string {
+export function mountOAuth(app: Express, { issuer, store, access, sameOrigin, redirects }: OAuthOptions): string {
     const resource = `${issuer}/mcp`;
     const metadata: OAuthMetadata = {
         issuer,
@@ -83,6 +89,7 @@ export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: 
     const pending = new Expiring<PendingAuthorization>(PENDING_TTL_MS);
     const codes = new Expiring<IssuedCode>(CODE_TTL_MS);
     const limiter = new RateLimiter(LOGIN_ATTEMPTS, LOGIN_WINDOW_MS);
+    const registerLimiter = new RateLimiter(REGISTER_ATTEMPTS, REGISTER_WINDOW_MS);
     const form = express.urlencoded({ extended: false, limit: "16kb" });
 
     app.get("/.well-known/oauth-authorization-server", cors, (_req, res) => void res.json(metadata));
@@ -93,10 +100,19 @@ export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: 
     app.options(["/register", "/token", "/revoke"], cors, (_req, res) => void res.sendStatus(204));
 
     app.post("/register", cors, express.json({ limit: "16kb" }), async (req, res) => {
+        if (!registerLimiter.allow(req.ip ?? "desconocida")) {
+            return void oauthError(res, 429, "too_many_requests", "Demasiados registros desde esta IP. Probá en una hora.");
+        }
         const body = (req.body ?? {}) as { redirect_uris?: unknown; client_name?: unknown };
         const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
-        if (!uris.length || !uris.every(isAllowedRedirect)) {
-            return void oauthError(res, 400, "invalid_redirect_uri", "Mandá al menos una redirect_uri válida.");
+        if (!uris.length || uris.some((u) => redirectTrust(u, redirects) === "rejected")) {
+            return void oauthError(
+                res,
+                400,
+                "invalid_redirect_uri",
+                "Las redirect_uri tienen que ser HTTPS, de loopback o de una app habilitada en este servidor " +
+                    "(UTN_MCP_REDIRECT_ALLOW), y sin fragmento.",
+            );
         }
         const client = {
             clientId: randomUUID(),
@@ -123,6 +139,10 @@ export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: 
         if (!q.redirect_uri || !client.redirectUris.includes(q.redirect_uri)) {
             return void errorPage(res, 400, "Redirección inválida", "La redirect_uri no es la que registró el cliente.");
         }
+        const trust = redirectTrust(q.redirect_uri, redirects);
+        if (trust === "rejected") {
+            return void errorPage(res, 400, "App no habilitada", "Esta app vuelve a una dirección que este servidor no acepta.");
+        }
 
         const fail = (error: string, description: string) => redirectWith(res, q.redirect_uri!, { error, error_description: description, state: q.state });
         if (q.response_type !== "code") return void fail("unsupported_response_type", "Solo se acepta response_type=code.");
@@ -137,11 +157,20 @@ export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: 
             clientId: client.clientId,
             clientName: client.clientName,
             redirectUri: q.redirect_uri,
+            unknownRedirect: trust === "unknown",
             codeChallenge: q.code_challenge,
             state: q.state,
             resource: q.resource,
         });
-        res.type("html").send(loginPage({ action: "/authorize", pendingId: id, clientName: client.clientName }));
+        res.type("html").send(
+            loginPage({
+                action: "/authorize",
+                pendingId: id,
+                clientName: client.clientName,
+                redirectUri: q.redirect_uri,
+                unknownRedirect: trust === "unknown",
+            }),
+        );
     });
 
     app.post("/authorize", sameOrigin, form, async (req, res) => {
@@ -150,7 +179,19 @@ export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: 
         if (!request) return void errorPage(res, 400, "Pedido vencido", "Pasó demasiado tiempo. Volvé a conectar desde tu app.");
 
         const retry = (error: string) =>
-            res.type("html").send(loginPage({ action: "/authorize", pendingId: id, clientName: request.clientName, error }));
+            res.type("html").send(
+                loginPage({
+                    action: "/authorize",
+                    pendingId: id,
+                    clientName: request.clientName,
+                    redirectUri: request.redirectUri,
+                    unknownRedirect: request.unknownRedirect,
+                    error,
+                }),
+            );
+        if (request.unknownRedirect && req.body?.acepto !== "si") {
+            return void retry("Para conectar una app que no es un cliente conocido tenés que aceptar el aviso.");
+        }
         const account = await login(req, retry);
         if (!account) return;
 
@@ -261,19 +302,6 @@ async function issueTokens(store: SessionStore, userId: number, clientId: string
 
 const pkceChallenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
 
-/** HTTPS, http solo en loopback (clientes de escritorio) o un esquema propio de una app (`cursor://`). */
-function isAllowedRedirect(uri: unknown): boolean {
-    if (typeof uri !== "string") return false;
-    try {
-        const url = new URL(uri);
-        if (FORBIDDEN_SCHEMES.has(url.protocol) || url.hash) return false;
-        if (url.protocol === "http:") return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 /** Los endpoints que llaman los clientes desde el navegador (como el MCP Inspector) aceptan cualquier origen. */
 const cors: RequestHandler = (_req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -301,19 +329,42 @@ function deniedPage(res: Response, reason: string, url?: string) {
     res.status(403).type("html").send(page("Sin acceso", `<p>${escapeHtml(reason)}</p>${link}`));
 }
 
-function loginPage(o: { action: string; pendingId?: string; clientName?: string | null; error?: string }): string {
+function loginPage(o: {
+    action: string;
+    pendingId?: string;
+    clientName?: string | null;
+    redirectUri?: string;
+    unknownRedirect?: boolean;
+    error?: string;
+}): string {
+    const where = o.redirectUri ? `<strong>${escapeHtml(describeRedirect(o.redirectUri))}</strong>` : "";
+    const destination =
+        where && !o.unknownRedirect ? ` Al terminar vas a volver a ${where}: si no es la app que estás conectando, no sigas.` : "";
+    const warning = o.unknownRedirect
+        ? `<div class=aviso><p><strong>Esta app no es un cliente conocido.</strong> Al terminar vas a volver a ${where}, ` +
+          "y desde ahí van a poder usar tu aula en tu nombre: leer tus cursos y mensajes, entregar tareas y escribir " +
+          "mensajes. Si alguien te pasó este link y no estás conectando un agente tuyo o de alguien en quien confiás, " +
+          "no sigas: puede ser un intento de robarte la sesión.</p></div>"
+        : "";
+    const consent = o.unknownRedirect
+        ? `<label class=acepto><input type="checkbox" name="acepto" value="si" required><span>Entiendo el riesgo y ` +
+          `conecto esta app bajo mi responsabilidad. Quien administra este servidor no se hace responsable de lo que ` +
+          `${where} haga con mi aula ni con mi sesión.</span></label>`
+        : "";
     const intro = o.pendingId
-        ? `<p>${escapeHtml(o.clientName ?? "Una app")} quiere usar UTN-MCP con tu Aula Virtual. Entrá con tu usuario de la UTN para conectarla.</p>`
+        ? `<p>${escapeHtml(o.clientName ?? "Una app")} quiere usar UTN-MCP con tu Aula Virtual. Entrá con tu usuario de la UTN para conectarla.${destination}</p>`
         : "<p>Tu sesión del aula venció. Entrá con tu usuario de la UTN para renovarla.</p>";
     const error = o.error ? `<p class=error>${escapeHtml(o.error)}</p>` : "";
     const hidden = o.pendingId ? `<input type="hidden" name="pedido" value="${escapeHtml(o.pendingId)}">` : "";
     return page(
         "Entrar con la UTN",
         intro +
+            warning +
             error +
             `<form method="post" action="${o.action}">${hidden}` +
             `<label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" required></label>` +
             `<label>Contraseña<input name="contrasena" type="password" autocomplete="current-password" required></label>` +
+            consent +
             `<button type="submit">Entrar</button></form>` +
             "<p class=nota>La contraseña se usa una sola vez para entrar al aula y no se guarda. " +
             'El código es abierto: <a href="https://github.com/nialvape/utn-mcp">github.com/nialvape/utn-mcp</a>.</p>',

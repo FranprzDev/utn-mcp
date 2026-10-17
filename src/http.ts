@@ -14,6 +14,7 @@ import {
 import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
 import type { AccessPolicy } from "./oauth/access.js";
 import { mountAdmin } from "./oauth/admin.js";
+import type { RedirectAllowlist } from "./oauth/redirects.js";
 import { mountOAuth } from "./oauth/server.js";
 import { logger } from "./shared/logger.js";
 import type { SessionStore } from "./shared/store/session-store.js";
@@ -65,18 +66,22 @@ export interface HttpOptions {
     publicUrl?: string;
     /** Quién puede conectarse por OAuth. */
     access: AccessPolicy;
+    /** A dónde puede volver el navegador después del login de OAuth. */
+    redirects: RedirectAllowlist;
     /** Con él se habilita la API de /admin (ver `mountAdmin`). */
     adminSecret?: string;
 }
 
 /** El factory recibe en `ctx.authInfo` el token ya validado, con el usuario; de ahí arma su sesión. */
 export function startHttpServer(factory: McpServerFactory, options: HttpOptions, store: SessionStore, inbox: UploadInbox) {
-    const { host, port, publicUrl, access, adminSecret } = options;
+    const { host, port, publicUrl, access, redirects, adminSecret } = options;
     const handler = createMcpHandler(factory, { onerror: (e) => logger.error(e.message) });
     const verifier = storeVerifier(store);
     const app = express();
     // Detrás de un reverse proxy en la misma máquina: la IP del cliente (para el rate limit) viene en X-Forwarded-For.
     app.set("trust proxy", "loopback");
+    app.disable("x-powered-by");
+    app.use(securityHeaders(publicUrl?.startsWith("https://") ?? false));
 
     // Contra DNS rebinding: solo se aceptan los hosts de esta máquina y el de la URL pública.
     const allowed = publicUrl ? [...LOOPBACK, new URL(publicUrl).hostname] : LOOPBACK;
@@ -92,6 +97,7 @@ export function startHttpServer(factory: McpServerFactory, options: HttpOptions,
         store,
         access,
         sameOrigin,
+        redirects,
     });
 
     if (adminSecret) mountAdmin(app, store, adminSecret);
@@ -116,6 +122,7 @@ export function startHttpServer(factory: McpServerFactory, options: HttpOptions,
     app.get("/subir/:id", sameOrigin, (req, res) => {
         const upload = inbox.get(String(req.params.id));
         if (!upload) return void res.status(404).type("html").send(page("Link vencido", EXPIRED));
+        if (upload.files) return void res.status(409).type("html").send(page("Link ya usado", USED));
         res.type("html").send(page(upload.title, uploadForm(upload.limits)));
     });
     app.post("/subir/:id", sameOrigin, (req, res) => receiveUpload(inbox, req, res));
@@ -135,17 +142,19 @@ async function receiveUpload(inbox: UploadInbox, req: ExpressRequest, res: Expre
             : res.status(status).json({ error: message });
 
     const id = String(req.params.id);
-    if (!inbox.get(id)) return void fail(404, "El link de subida venció o no existe.");
-    if (Number(req.headers["content-length"]) > MAX_UPLOAD_BYTES) {
-        return void fail(413, `La subida pasa el máximo de ${formatSize(MAX_UPLOAD_BYTES)}.`);
-    }
+    const upload = inbox.get(id);
+    if (!upload) return void fail(404, "El link de subida venció o no existe.");
+    if (upload.files) return void fail(409, "Este link ya se usó. Pedile al agente uno nuevo.");
+    const tooBig = `La subida pasa el máximo de ${formatSize(MAX_UPLOAD_BYTES)}.`;
+    if (Number(req.headers["content-length"]) > MAX_UPLOAD_BYTES) return void fail(413, tooBig);
 
+    const body = limitBytes(Readable.toWeb(req) as ReadableStream<Uint8Array>, MAX_UPLOAD_BYTES);
     try {
         // Request de la API web: parsea multipart sin sumar dependencias.
         const request = new Request(`http://localhost${req.url}`, {
             method: "POST",
             headers: req.headers as Record<string, string>,
-            body: Readable.toWeb(req) as ReadableStream,
+            body: body.stream,
             duplex: "half",
         } as RequestInit);
         const form = await request.formData();
@@ -164,11 +173,46 @@ async function receiveUpload(inbox: UploadInbox, req: ExpressRequest, res: Expre
             res.json({ recibidos: received });
         }
     } catch (e) {
-        fail(400, (e as Error).message);
+        if (body.exceeded()) {
+            fail(413, tooBig);
+            req.destroy();
+        } else {
+            fail(400, (e as Error).message);
+        }
     }
 }
 
+function limitBytes(source: ReadableStream<Uint8Array>, maxBytes: number) {
+    let total = 0;
+    const stream = source.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+            transform(chunk, controller) {
+                total += chunk.length;
+                if (total > maxBytes) controller.error(new Error("La subida es demasiado grande."));
+                else controller.enqueue(chunk);
+            },
+        }),
+    );
+    return { stream, exceeded: () => total > maxBytes };
+}
+
+function securityHeaders(https: boolean): RequestHandler {
+    return (_req, res, next) => {
+        res.setHeader(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
+        );
+        res.setHeader("X-Frame-Options", "DENY");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Referrer-Policy", "no-referrer");
+        // Un año, en segundos.
+        if (https) res.setHeader("Strict-Transport-Security", "max-age=31536000");
+        next();
+    };
+}
+
 const EXPIRED = "<p>Este link de subida venció o ya no existe. Pedile al agente uno nuevo.</p>";
+const USED = "<p>Ya se subieron archivos a este link y no se pueden cambiar. Si te equivocaste, pedile al agente uno nuevo.</p>";
 
 function uploadForm(limits: UploadLimits): string {
     const rules = [

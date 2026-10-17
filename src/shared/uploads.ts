@@ -35,6 +35,8 @@ interface Upload {
 const UPLOAD_TTL_MS = 30 * 60 * 1000;
 /** Tope de una subida entera, en bytes: los archivos quedan en memoria hasta que se entregan. */
 export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+/** Links abiertos por usuario: con más, se cierra el más viejo. */
+const MAX_OPEN_PER_OWNER = 5;
 
 /**
  * Links de un solo uso para recibir archivos por HTTP: los sube el agente con `curl` si tiene
@@ -48,6 +50,9 @@ export class UploadInbox {
 
     open(owner: string, title: string, limits: UploadLimits) {
         this.sweep();
+        // El Map conserva el orden de inserción: el primero que aparece es el más viejo.
+        const own = [...this.uploads].filter(([, u]) => u.owner === owner);
+        for (const [oldId] of own.slice(0, Math.max(0, own.length - MAX_OPEN_PER_OWNER + 1))) this.uploads.delete(oldId);
         const id = randomBytes(24).toString("base64url");
         const expiresAt = Date.now() + UPLOAD_TTL_MS;
         this.uploads.set(id, { owner, title, limits, files: null, expiresAt });
@@ -60,10 +65,11 @@ export class UploadInbox {
         return this.uploads.get(id);
     }
 
-    /** Guarda los archivos de una subida; una subida nueva al mismo link reemplaza la anterior. */
+    /** Guarda los archivos de una subida; cada link acepta una sola. */
     receive(id: string, files: UploadedFile[]): void {
         const upload = this.uploads.get(id);
         if (!upload || upload.expiresAt < Date.now()) throw new Error("El link de subida venció o no existe.");
+        if (upload.files) throw new Error("Este link ya se usó. Pedile al agente uno nuevo.");
         if (!files.length) throw new Error('No llegó ningún archivo: van en el campo "archivos".');
         checkFiles(files, upload.limits);
         upload.files = files;

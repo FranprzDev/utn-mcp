@@ -349,7 +349,8 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     '`-F "archivos=@..."` por archivo, todos en el mismo comando. Responde JSON con lo recibido.\n' +
                     "- Si no, pasale el `url` al usuario: se abre en el navegador, también en el celu, y elige " +
                     "los archivos ahí. Esperá a que te diga que los subió.\n\n" +
-                    "Subir al link no entrega nada; una subida nueva al mismo link reemplaza la anterior. " +
+                    "Subir al link no entrega nada. Cada link acepta una sola subida: si hay que cambiar los " +
+                    "archivos, pedí otro link. " +
                     "`acepta` trae los límites de la tarea.",
                 inputSchema: z.object({
                     direccion: z
