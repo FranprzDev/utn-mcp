@@ -106,6 +106,8 @@ export function mountOAuth(app: Express, { issuer, store, access, sameOrigin, re
         const body = (req.body ?? {}) as { redirect_uris?: unknown; client_name?: unknown };
         const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
         if (!uris.length || uris.some((u) => redirectTrust(u, redirects) === "rejected")) {
+            // Queda en el log para poder habilitar el esquema de una app nueva con UTN_MCP_REDIRECT_ALLOW.
+            logger.warn(`OAuth /register rechazado: ${JSON.stringify(uris).slice(0, 300)}`);
             return void oauthError(
                 res,
                 400,

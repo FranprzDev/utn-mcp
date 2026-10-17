@@ -6,8 +6,16 @@ export interface RedirectAllowlist {
     schemes: Set<string>;
 }
 
-/** Los callbacks de los clientes MCP conocidos (Claude, ChatGPT, VS Code web) y los esquemas de editores. */
-const DEFAULT_HOSTS = ["claude.ai", "claude.com", "chatgpt.com", "chat.openai.com", "vscode.dev", "insiders.vscode.dev"];
+/** Los callbacks de los clientes MCP conocidos (Claude, ChatGPT, Grok, VS Code web) y los esquemas de editores. */
+const DEFAULT_HOSTS = [
+    "claude.ai",
+    "claude.com",
+    "chatgpt.com",
+    "chat.openai.com",
+    "grok.com",
+    "vscode.dev",
+    "insiders.vscode.dev",
+];
 const DEFAULT_SCHEMES = ["cursor:", "vscode:", "vscode-insiders:", "windsurf:"];
 
 /** En loopback la redirección queda en la compu del usuario: ahí escuchan los clientes de escritorio. */
