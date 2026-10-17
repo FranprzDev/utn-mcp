@@ -1,5 +1,5 @@
 # UTN-MCP — El puente entre tu agente y los sistemas de la Universidad.
-Este es el Model Context Protocol server NO OFICIAL de la UTN. Con él podrás pedirle a tu agente de preferencia (ChatGPT, Claude, etc.) que busque informacion o archivos en el aula virtual.
+Este es el Model Context Protocol server NO OFICIAL de la UTN. Con él podés pedirle a tu agente de preferencia (Claude, ChatGPT, etc.) que busque información y lea los apuntes del aula virtual y, con tu confirmación, que publique en los foros o entregue tareas. Corre en tu computadora o como servidor HTTP con OAuth, para usarlo desde cualquier lado.
 
 ## Qué podés pedirle
 - *"¿Cuándo es el recuperatorio del primer parcial de Álgebra?"*
@@ -107,7 +107,7 @@ mcp_servers:
 }
 ```
 
-**ChatGPT**: todavía no. ChatGPT sólo se conecta a servidores MCP remotos por HTTPS, y utn-mcp corre en tu computadora. Va a funcionar con la versión hosteada.
+**ChatGPT**: solo se conecta a servidores MCP remotos por HTTPS, así que necesita un servidor en modo HTTP publicado en internet (ver [Hostearlo para otros](#hostearlo-para-otros)). Se agrega como conector desde *Configuración → Apps y conectores*, con el modo desarrollador activado.
 
 **Otros clientes (Windsurf, opencode, etc.)**: cualquier cliente MCP que lance servidores por STDIO sirve con el comando `npx -y utn-mcp`.
 
@@ -137,7 +137,7 @@ En modo HTTP el servidor también es servidor de autorización OAuth: un cliente
 
 Quién puede entrar lo decidís vos: con `UTN_MCP_ALLOWED_EMAILS` (una lista), o con `UTN_MCP_ACCESS_URL`, que apunta a un servicio tuyo. El servidor le hace `POST` con `{ "email", "usuario" }` y el header `Authorization: Bearer <UTN_MCP_ACCESS_SECRET>`, y espera `{ "permitido": true }` o `{ "permitido": false, "motivo": "...", "url": "..." }`. Se consulta al conectar y en cada renovación del token (cada hora), así que una baja se aplica sola.
 
-La configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](.env.example)):
+La configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](https://github.com/nialvape/utn-mcp/blob/main/.env.example)):
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
@@ -152,17 +152,21 @@ La configuración va en variables de entorno o en un `.env` en la carpeta desde 
 Con Docker, detrás de un reverse proxy con HTTPS en la misma máquina (red host, para que el rate limit del login vea la IP real):
 ```bash
 docker build -t utn-mcp .
-docker run -d --name utn-mcp --network host --restart unless-stopped   -e HOST=127.0.0.1 -e PORT=8100 -e UTN_MCP_PUBLIC_URL=https://tu-dominio   -e UTN_MCP_KEY=$(openssl rand -base64 32) -v utn-mcp-data:/data utn-mcp
+docker run -d --name utn-mcp --network host --restart unless-stopped \
+  -e HOST=127.0.0.1 -e PORT=8100 -e UTN_MCP_PUBLIC_URL=https://mcp.tu-dominio.com \
+  -e UTN_MCP_KEY=$(openssl rand -base64 32) -v utn-mcp-data:/data utn-mcp
 ```
 Guardá esa `UTN_MCP_KEY`: sin ella no se pueden descifrar las sesiones guardadas.
 
 ## Dónde se guardan tus datos
-Todo queda en tu computadora:
+Instalado en tu computadora, todo queda ahí:
 - **Usuario y contraseña**: en el gestor de credenciales del sistema (Windows Credential Manager, Keychain en macOS, Secret Service en Linux).
 - **Token del aula virtual y cookies de sesión**: en `%APPDATA%\utn-mcp\session.json` (Windows) o `~/.config/utn-mcp/session.json` (Linux y macOS).
 - **En modo HTTP**: la contraseña no se guarda; la sesión va cifrada en `utn-mcp.db`, en la misma carpeta, con la clave de `store.key` (o la de `UTN_MCP_KEY`). Del token del cliente solo se guarda el hash.
 
 En Linux sin gestor de credenciales (servidores, Docker, WSL) podés definir las variables de entorno `UTN_USER` y `UTN_PASS` en lugar de usar `login`.
+
+Si usás un servidor hosteado por otra persona, tu sesión del aula la guarda ese servidor (cifrada, y sin tu contraseña): revisá su política de privacidad.
 
 ## Desarrollo
 ```bash
