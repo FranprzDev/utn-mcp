@@ -12,8 +12,11 @@ import {
     type OAuthTokenVerifier,
 } from "@modelcontextprotocol/server";
 import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
+import type { AccessPolicy } from "./oauth/access.js";
+import { mountOAuth } from "./oauth/server.js";
 import { logger } from "./shared/logger.js";
 import type { SessionStore } from "./shared/store/session-store.js";
+import { escapeHtml, page } from "./shared/pages.js";
 import { MAX_UPLOAD_BYTES, formatSize, type UploadInbox, type UploadLimits } from "./shared/uploads.js";
 
 type Guard = (req: IncomingMessage, res: ServerResponse) => boolean;
@@ -59,12 +62,34 @@ export interface HttpOptions {
     port: number;
     /** Sin barra final, por ejemplo `https://sv.utnmcp.com.ar`. */
     publicUrl?: string;
+    /** Quién puede conectarse por OAuth. */
+    access: AccessPolicy;
 }
 
 /** El factory recibe en `ctx.authInfo` el token ya validado, con el usuario; de ahí arma su sesión. */
 export function startHttpServer(factory: McpServerFactory, options: HttpOptions, store: SessionStore, inbox: UploadInbox) {
+    const { host, port, publicUrl, access } = options;
     const handler = createMcpHandler(factory, { onerror: (e) => logger.error(e.message) });
     const verifier = storeVerifier(store);
+    const app = express();
+    // Detrás de un reverse proxy en la misma máquina: la IP del cliente (para el rate limit) viene en X-Forwarded-For.
+    app.set("trust proxy", "loopback");
+
+    // Contra DNS rebinding: solo se aceptan los hosts de esta máquina y el de la URL pública.
+    const allowed = publicUrl ? [...LOOPBACK, new URL(publicUrl).hostname] : LOOPBACK;
+    if (!publicUrl && !LOOPBACK.includes(host)) {
+        logger.warn(`Escuchando en ${host} sin UTN_MCP_PUBLIC_URL: se rechazan los requests que no lleguen como localhost.`);
+    }
+    app.use(asMiddleware(hostHeaderValidation(allowed)));
+    // Origin solo donde un navegador ajeno no tiene nada que hacer; los endpoints de OAuth tienen CORS abierto.
+    const sameOrigin = asMiddleware(originValidation(allowed));
+
+    const resourceMetadataUrl = mountOAuth(app, {
+        issuer: publicUrl ?? `http://127.0.0.1:${port}`,
+        store,
+        access,
+        sameOrigin,
+    });
 
     const requireToken: RequestHandler = async (req, res, next) => {
         try {
@@ -72,32 +97,23 @@ export function startHttpServer(factory: McpServerFactory, options: HttpOptions,
             (req as { auth?: AuthInfo }).auth = await verifyBearerToken(req.headers.authorization, { verifier });
             next();
         } catch (e) {
-            const challenge = bearerAuthChallengeResponse(e);
+            // El 401 dice dónde está la metadata: de ahí el cliente arranca el OAuth.
+            const challenge = bearerAuthChallengeResponse(e, { resourceMetadataUrl });
             res.status(challenge.status);
             challenge.headers.forEach((value, name) => res.setHeader(name, value));
             res.send(await challenge.text());
         }
     };
 
-    // Contra DNS rebinding: solo se aceptan los hosts de esta máquina y el de la URL pública.
-    const { host, port, publicUrl } = options;
-    const allowed = publicUrl ? [...LOOPBACK, new URL(publicUrl).hostname] : LOOPBACK;
-    if (!publicUrl && !LOOPBACK.includes(host)) {
-        logger.warn(`Escuchando en ${host} sin UTN_MCP_PUBLIC_URL: se rechazan los requests que no lleguen como localhost.`);
-    }
-
-    const app = express();
-    app.use(asMiddleware(hostHeaderValidation(allowed)));
-    app.use(asMiddleware(originValidation(allowed)));
     // Sin express.json(): el handler lee el body por su cuenta.
-    app.all("/mcp", requireToken, toNodeHandler(handler));
+    app.all("/mcp", sameOrigin, requireToken, toNodeHandler(handler));
     // Sin bearer: el id del link es el secreto, y lo abre un navegador o un `curl` que no lo tienen.
-    app.get("/subir/:id", (req, res) => {
-        const upload = inbox.get(req.params.id);
+    app.get("/subir/:id", sameOrigin, (req, res) => {
+        const upload = inbox.get(String(req.params.id));
         if (!upload) return void res.status(404).type("html").send(page("Link vencido", EXPIRED));
         res.type("html").send(page(upload.title, uploadForm(upload.limits)));
     });
-    app.post("/subir/:id", (req, res) => receiveUpload(inbox, req, res));
+    app.post("/subir/:id", sameOrigin, (req, res) => receiveUpload(inbox, req, res));
 
     app.listen(port, host, () => {
         logger.info(`Servidor MCP escuchando en http://${host}:${port}/mcp`);
@@ -164,19 +180,3 @@ function uploadForm(limits: UploadLimits): string {
         "<p class=nota>Subirlos no entrega la tarea: después el agente te confirma y la entrega.</p>"
     );
 }
-
-/** Página mínima: se abre desde el celu, así que nada más que lo necesario. */
-function page(title: string, body: string): string {
-    return (
-        `<!doctype html><html lang="es"><head><meta charset="utf-8">` +
-        `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>` +
-        "<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem;" +
-        "line-height:1.5;color:#1a1a1a;background:#fff}@media(prefers-color-scheme:dark){body{color:#eee;" +
-        "background:#151515}}form{display:flex;flex-direction:column;gap:1rem;margin:1.5rem 0}" +
-        "button{padding:.7rem;font-size:1rem}.nota{opacity:.7;font-size:.9rem}</style></head>" +
-        `<body><h1>${escapeHtml(title)}</h1>${body}</body></html>`
-    );
-}
-
-const escapeHtml = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

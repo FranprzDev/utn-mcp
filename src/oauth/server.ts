@@ -1,0 +1,321 @@
+import { createHash, randomUUID } from "node:crypto";
+import express, { type Express, type Request, type RequestHandler, type Response } from "express";
+import {
+    buildOAuthProtectedResourceMetadata,
+    checkResourceAllowed,
+    getOAuthProtectedResourceMetadataUrl,
+    type OAuthMetadata,
+} from "@modelcontextprotocol/server";
+import { linkAulaAccount } from "../aula-virtual/client/link.js";
+import { InvalidCredentialsError } from "../aula-virtual/client/sso-login.js";
+import { logger } from "../shared/logger.js";
+import { escapeHtml, page } from "../shared/pages.js";
+import type { SessionStore } from "../shared/store/session-store.js";
+import type { AccessPolicy } from "./access.js";
+import { Expiring, RateLimiter } from "./expiring.js";
+
+/** Duración del access token, en segundos: una baja de acceso se aplica a más tardar en este tiempo. */
+const ACCESS_TTL = 60 * 60;
+/** Duración del refresh token, en segundos. Rota en cada uso. */
+const REFRESH_TTL = 30 * 24 * 60 * 60;
+/** Cuánto vive un code sin canjear, en milisegundos. */
+const CODE_TTL_MS = 60_000;
+/** Cuánto tiene el usuario para completar el login, en milisegundos. */
+const PENDING_TTL_MS = 10 * 60_000;
+/** Intentos de login por IP cada 15 minutos: que el servidor no sirva para probar contraseñas contra el SSO. */
+const LOGIN_ATTEMPTS = 10;
+const LOGIN_WINDOW_MS = 15 * 60_000;
+/** Esquemas de redirect_uri que nunca aceptamos. */
+const FORBIDDEN_SCHEMES = new Set(["javascript:", "data:", "file:", "vbscript:"]);
+
+export interface OAuthOptions {
+    /** URL base del servidor, sin barra final: es el issuer y de ahí salen los endpoints. */
+    issuer: string;
+    store: SessionStore;
+    access: AccessPolicy;
+    /** Rechaza los POST de formularios que vengan de otro origen. */
+    sameOrigin: RequestHandler;
+}
+
+/** Un pedido de `/authorize` esperando que el usuario entre con la UTN. */
+interface PendingAuthorization {
+    clientId: string;
+    clientName: string | null;
+    redirectUri: string;
+    codeChallenge: string;
+    state?: string;
+    resource?: string;
+}
+
+interface IssuedCode {
+    userId: number;
+    clientId: string;
+    redirectUri: string;
+    codeChallenge: string;
+}
+
+/**
+ * Servidor de autorización OAuth 2.1 para los clientes MCP: registro dinámico, PKCE obligatorio y
+ * clientes públicos. El usuario se identifica con la UTN, y ese mismo login vincula su aula: la
+ * contraseña se usa una vez y no se guarda. Devuelve la URL de la metadata del recurso, que va en el 401.
+ */
+export function mountOAuth(app: Express, { issuer, store, access, sameOrigin }: OAuthOptions): string {
+    const resource = `${issuer}/mcp`;
+    const metadata: OAuthMetadata = {
+        issuer,
+        authorization_endpoint: `${issuer}/authorize`,
+        token_endpoint: `${issuer}/token`,
+        registration_endpoint: `${issuer}/register`,
+        revocation_endpoint: `${issuer}/revoke`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code", "refresh_token"],
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["none"],
+        revocation_endpoint_auth_methods_supported: ["none"],
+    };
+    // Valida el issuer al arrancar (HTTPS salvo en localhost) en lugar de en el primer request.
+    const resourceMetadata = buildOAuthProtectedResourceMetadata({
+        oauthMetadata: metadata,
+        resourceServerUrl: new URL(resource),
+        resourceName: "UTN-MCP",
+    });
+
+    const pending = new Expiring<PendingAuthorization>(PENDING_TTL_MS);
+    const codes = new Expiring<IssuedCode>(CODE_TTL_MS);
+    const limiter = new RateLimiter(LOGIN_ATTEMPTS, LOGIN_WINDOW_MS);
+    const form = express.urlencoded({ extended: false, limit: "16kb" });
+
+    app.get("/.well-known/oauth-authorization-server", cors, (_req, res) => void res.json(metadata));
+    app.get(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"], cors, (_req, res) =>
+        void res.json(resourceMetadata),
+    );
+
+    app.options(["/register", "/token", "/revoke"], cors, (_req, res) => void res.sendStatus(204));
+
+    app.post("/register", cors, express.json({ limit: "16kb" }), async (req, res) => {
+        const body = (req.body ?? {}) as { redirect_uris?: unknown; client_name?: unknown };
+        const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
+        if (!uris.length || !uris.every(isAllowedRedirect)) {
+            return void oauthError(res, 400, "invalid_redirect_uri", "Mandá al menos una redirect_uri válida.");
+        }
+        const client = {
+            clientId: randomUUID(),
+            clientName: typeof body.client_name === "string" ? body.client_name.slice(0, 100) : null,
+            redirectUris: uris as string[],
+        };
+        await store.saveClient(client);
+        res.status(201).json({
+            client_id: client.clientId,
+            client_id_issued_at: Math.floor(Date.now() / 1000),
+            client_name: client.clientName ?? undefined,
+            redirect_uris: client.redirectUris,
+            grant_types: ["authorization_code", "refresh_token"],
+            response_types: ["code"],
+            token_endpoint_auth_method: "none",
+        });
+    });
+
+    app.get("/authorize", async (req, res) => {
+        const q = req.query as Record<string, string | undefined>;
+        const client = q.client_id ? await store.findClient(q.client_id) : null;
+        // Sin cliente o redirect_uri válidos no se redirige a ningún lado: el error lo ve el usuario.
+        if (!client) return void errorPage(res, 400, "Cliente desconocido", "Este cliente no está registrado. Volvé a conectarlo desde tu app.");
+        if (!q.redirect_uri || !client.redirectUris.includes(q.redirect_uri)) {
+            return void errorPage(res, 400, "Redirección inválida", "La redirect_uri no es la que registró el cliente.");
+        }
+
+        const fail = (error: string, description: string) => redirectWith(res, q.redirect_uri!, { error, error_description: description, state: q.state });
+        if (q.response_type !== "code") return void fail("unsupported_response_type", "Solo se acepta response_type=code.");
+        if (!q.code_challenge || q.code_challenge_method !== "S256") {
+            return void fail("invalid_request", "PKCE es obligatorio, con code_challenge_method=S256.");
+        }
+        if (q.resource && !checkResourceAllowed({ requestedResource: q.resource, configuredResource: resource })) {
+            return void fail("invalid_target", `El único recurso de este servidor es ${resource}.`);
+        }
+
+        const id = pending.add({
+            clientId: client.clientId,
+            clientName: client.clientName,
+            redirectUri: q.redirect_uri,
+            codeChallenge: q.code_challenge,
+            state: q.state,
+            resource: q.resource,
+        });
+        res.type("html").send(loginPage({ action: "/authorize", pendingId: id, clientName: client.clientName }));
+    });
+
+    app.post("/authorize", sameOrigin, form, async (req, res) => {
+        const id = String(req.body?.pedido ?? "");
+        const request = pending.get(id);
+        if (!request) return void errorPage(res, 400, "Pedido vencido", "Pasó demasiado tiempo. Volvé a conectar desde tu app.");
+
+        const retry = (error: string) =>
+            res.type("html").send(loginPage({ action: "/authorize", pendingId: id, clientName: request.clientName, error }));
+        const account = await login(req, retry);
+        if (!account) return;
+
+        const decision = await access({ username: account.username, email: account.email });
+        if (!decision.allowed) return void deniedPage(res, decision.reason, decision.url);
+
+        pending.take(id);
+        const code = codes.add({
+            userId: account.userId,
+            clientId: request.clientId,
+            redirectUri: request.redirectUri,
+            codeChallenge: request.codeChallenge,
+        });
+        logger.info(`OAuth: ${account.username} autorizó a ${request.clientName ?? request.clientId}.`);
+        redirectWith(res, request.redirectUri, { code, state: request.state, iss: issuer });
+    });
+
+    app.post("/token", cors, form, express.json({ limit: "16kb" }), async (req, res) => {
+        const body = (req.body ?? {}) as Record<string, string | undefined>;
+        try {
+            if (body.grant_type === "authorization_code") {
+                const code = body.code ? codes.take(body.code) : undefined;
+                if (!code) return void oauthError(res, 400, "invalid_grant", "El code no existe, venció o ya se usó.");
+                if (body.client_id && body.client_id !== code.clientId) {
+                    return void oauthError(res, 400, "invalid_grant", "El code es de otro cliente.");
+                }
+                if (body.redirect_uri && body.redirect_uri !== code.redirectUri) {
+                    return void oauthError(res, 400, "invalid_grant", "La redirect_uri no coincide con la del pedido.");
+                }
+                if (!body.code_verifier || pkceChallenge(body.code_verifier) !== code.codeChallenge) {
+                    return void oauthError(res, 400, "invalid_grant", "El code_verifier no corresponde al code_challenge.");
+                }
+                return void res.json(await issueTokens(store, code.userId, code.clientId));
+            }
+
+            if (body.grant_type === "refresh_token") {
+                const found = body.refresh_token ? await store.findToken(body.refresh_token, "refresh") : null;
+                if (!found) return void oauthError(res, 400, "invalid_grant", "El refresh token no existe, venció o fue revocado.");
+                const clientId = found.clientId ?? body.client_id ?? "desconocido";
+                if (body.client_id && found.clientId && body.client_id !== found.clientId) {
+                    return void oauthError(res, 400, "invalid_grant", "El refresh token es de otro cliente.");
+                }
+                await store.revokeToken(body.refresh_token!);
+
+                // El acceso se vuelve a mirar en cada refresh: si la cuenta se dio de baja, acá se corta.
+                const user = await store.findUser(found.userId);
+                if (!user) return void oauthError(res, 400, "invalid_grant", "El usuario ya no existe.");
+                const decision = await access({ username: user.utnUsername, email: user.email });
+                if (!decision.allowed) return void oauthError(res, 400, "invalid_grant", decision.reason);
+                return void res.json(await issueTokens(store, user.id, clientId));
+            }
+
+            oauthError(res, 400, "unsupported_grant_type", "Solo authorization_code y refresh_token.");
+        } catch (e) {
+            logger.error(`OAuth /token: ${(e as Error).message}`);
+            oauthError(res, 500, "server_error", "Error interno al emitir el token.");
+        }
+    });
+
+    app.post("/revoke", cors, form, express.json({ limit: "16kb" }), async (req, res) => {
+        const token = (req.body as { token?: string } | undefined)?.token;
+        if (token) await store.revokeToken(token);
+        // RFC 7009: se contesta 200 aunque el token no exista.
+        res.sendStatus(200);
+    });
+
+    // Volver a iniciar sesión cuando vence la sesión del aula: no emite tokens, solo renueva la sesión.
+    app.get("/login", (_req, res) => void res.type("html").send(loginPage({ action: "/login" })));
+    app.post("/login", sameOrigin, form, async (req, res) => {
+        const account = await login(req, (error) => res.type("html").send(loginPage({ action: "/login", error })));
+        if (!account) return;
+        logger.info(`OAuth: ${account.username} renovó su sesión del aula.`);
+        res.type("html").send(page("Listo", "<p>Ya renovamos tu sesión del aula. Volvé al chat y pedile al agente que reintente.</p>"));
+    });
+
+    /** Entra al aula con lo que mandó el formulario; si falla, vuelve a mostrarlo con el error. */
+    async function login(req: Request, retry: (error: string) => void) {
+        if (!limiter.allow(req.ip ?? "desconocida")) {
+            retry("Demasiados intentos. Esperá unos minutos y probá de nuevo.");
+            return null;
+        }
+        const username = String(req.body?.usuario ?? "").trim();
+        const password = String(req.body?.contrasena ?? "");
+        if (!username || !password) {
+            retry("Completá usuario y contraseña.");
+            return null;
+        }
+        try {
+            return await linkAulaAccount(store, { username, password });
+        } catch (e) {
+            if (e instanceof InvalidCredentialsError) retry("La UTN rechazó el usuario o la contraseña.");
+            else {
+                logger.error(`Login de ${username}: ${(e as Error).message}`);
+                retry("No pudimos entrar al aula. Puede que esté caída: probá de nuevo en unos minutos.");
+            }
+            return null;
+        }
+    }
+
+    return getOAuthProtectedResourceMetadataUrl(new URL(resource));
+}
+
+async function issueTokens(store: SessionStore, userId: number, clientId: string) {
+    const accessToken = await store.issueToken(userId, { kind: "access", clientId, ttlSeconds: ACCESS_TTL });
+    const refreshToken = await store.issueToken(userId, { kind: "refresh", clientId, ttlSeconds: REFRESH_TTL });
+    return { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL, refresh_token: refreshToken };
+}
+
+const pkceChallenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
+
+/** HTTPS, http solo en loopback (clientes de escritorio) o un esquema propio de una app (`cursor://`). */
+function isAllowedRedirect(uri: unknown): boolean {
+    if (typeof uri !== "string") return false;
+    try {
+        const url = new URL(uri);
+        if (FORBIDDEN_SCHEMES.has(url.protocol) || url.hash) return false;
+        if (url.protocol === "http:") return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Los endpoints que llaman los clientes desde el navegador (como el MCP Inspector) aceptan cualquier origen. */
+const cors: RequestHandler = (_req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "content-type, authorization, mcp-protocol-version");
+    next();
+};
+
+function redirectWith(res: Response, base: string, params: Record<string, string | undefined>) {
+    const url = new URL(base);
+    for (const [k, v] of Object.entries(params)) if (v !== undefined) url.searchParams.set(k, v);
+    res.redirect(302, url.toString());
+}
+
+function oauthError(res: Response, status: number, error: string, description: string) {
+    res.status(status).json({ error, error_description: description });
+}
+
+function errorPage(res: Response, status: number, title: string, message: string) {
+    res.status(status).type("html").send(page(title, `<p>${escapeHtml(message)}</p>`));
+}
+
+function deniedPage(res: Response, reason: string, url?: string) {
+    const link = url ? `<p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>` : "";
+    res.status(403).type("html").send(page("Sin acceso", `<p>${escapeHtml(reason)}</p>${link}`));
+}
+
+function loginPage(o: { action: string; pendingId?: string; clientName?: string | null; error?: string }): string {
+    const intro = o.pendingId
+        ? `<p>${escapeHtml(o.clientName ?? "Una app")} quiere usar UTN-MCP con tu Aula Virtual. Entrá con tu usuario de la UTN para conectarla.</p>`
+        : "<p>Tu sesión del aula venció. Entrá con tu usuario de la UTN para renovarla.</p>";
+    const error = o.error ? `<p class=error>${escapeHtml(o.error)}</p>` : "";
+    const hidden = o.pendingId ? `<input type="hidden" name="pedido" value="${escapeHtml(o.pendingId)}">` : "";
+    return page(
+        "Entrar con la UTN",
+        intro +
+            error +
+            `<form method="post" action="${o.action}">${hidden}` +
+            `<label>Usuario<input name="usuario" autocomplete="username" autocapitalize="none" required></label>` +
+            `<label>Contraseña<input name="contrasena" type="password" autocomplete="current-password" required></label>` +
+            `<button type="submit">Entrar</button></form>` +
+            "<p class=nota>La contraseña se usa una sola vez para entrar al aula y no se guarda. " +
+            'El código es abierto: <a href="https://github.com/nialvape/utn-mcp">github.com/nialvape/utn-mcp</a>.</p>',
+    );
+}

@@ -8,6 +8,7 @@ import { LocalSession } from "./aula-virtual/client/local-session.js";
 import { StoredAulaSession } from "./aula-virtual/client/stored-session.js";
 import { runLogin } from "./aula-virtual/login.js";
 import { startHttpServer, userIdOf } from "./http.js";
+import { accessPolicyFromEnv } from "./oauth/access.js";
 import { createServer } from "./server.js";
 import { logger } from "./shared/logger.js";
 import { SqliteStore } from "./shared/store/sqlite-store.js";
@@ -53,15 +54,17 @@ async function main() {
         // llegan por links de subida: el servidor puede no estar en la compu de quien entrega.
         const port = Number(values.port);
         const publicUrl = process.env.UTN_MCP_PUBLIC_URL?.replace(/\/+$/, "") || undefined;
-        const loginUrl = process.env.UTN_MCP_LOGIN_URL || undefined;
+        const baseUrl = publicUrl ?? `http://127.0.0.1:${port}`;
+        // La página de `/login` del propio servidor, salvo que el que hostea prefiera mandar a otra.
+        const loginUrl = process.env.UTN_MCP_LOGIN_URL || `${baseUrl}/login`;
         const store = await SqliteStore.open();
-        const inbox = new UploadInbox(publicUrl ?? `http://127.0.0.1:${port}`);
+        const inbox = new UploadInbox(baseUrl);
         const factory = (ctx: { authInfo?: AuthInfo }) => {
             const userId = userIdOf(ctx.authInfo);
             const aula = new StoredAulaSession(store, userId, loginUrl);
             return createServer(aula, { local: false, inbox, owner: String(userId) });
         };
-        startHttpServer(factory, { host: values.host, port, publicUrl }, store, inbox);
+        startHttpServer(factory, { host: values.host, port, publicUrl, access: accessPolicyFromEnv() }, store, inbox);
     } else {
         // STDIO: un solo usuario, el de la compu, con la misma sesión para todas las conexiones.
         const aula = new LocalSession();

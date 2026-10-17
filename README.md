@@ -132,20 +132,34 @@ Levanta el servidor en `http://127.0.0.1:3000/mcp`, solo accesible desde tu prop
 
 En este modo el servidor no lee archivos de tu disco: para entregar, el agente pide un link con `aula_assign_upload_link` y sube ahí los archivos con `curl` si tiene terminal, o te pasa el link para que los elijas desde el navegador.
 
-Para hostearlo, la configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](.env.example)):
+### Hostearlo para otros
+En modo HTTP el servidor también es servidor de autorización OAuth: un cliente MCP (Claude, ChatGPT) que se conecta a `https://tu-dominio/mcp` recibe un 401, descubre el OAuth y abre una página donde el alumno entra con su usuario de la UTN. Ese login vincula su aula: la contraseña se usa una sola vez para sacar el token de Moodle y **no se guarda**. Cuando la sesión del aula vence, el agente le pasa el link de `/login` para renovarla, sin reconectar el cliente.
+
+Quién puede entrar lo decidís vos: con `UTN_MCP_ALLOWED_EMAILS` (una lista), o con `UTN_MCP_ACCESS_URL`, que apunta a un servicio tuyo (por ejemplo, el de suscripciones). El servidor le hace `POST` con `{ "email", "usuario" }` y el header `Authorization: Bearer <UTN_MCP_ACCESS_SECRET>`, y espera `{ "permitido": true }` o `{ "permitido": false, "motivo": "...", "url": "..." }`. Se consulta al conectar y en cada renovación del token (cada hora), así que una baja se aplica sola.
+
+La configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](.env.example)):
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
-| `HOST`, `PORT` | Dónde escucha. Detrás de un reverse proxy, `HOST=0.0.0.0`. | `127.0.0.1`, `3000` |
-| `UTN_MCP_PUBLIC_URL` | Dirección pública (`https://sv.utnmcp.com.ar`). La usan los links de subida, y es el único host, además de localhost, que se acepta en `Host` y `Origin`. | — |
-| `UTN_MCP_LOGIN_URL` | Página donde el usuario vuelve a iniciar sesión cuando su sesión del aula vence; el agente se la pasa. | Indica correr `utn-mcp login --http` |
+| `HOST`, `PORT` | Dónde escucha. | `127.0.0.1`, `3000` |
+| `UTN_MCP_PUBLIC_URL` | Dirección pública (`https://sv.utnmcp.com.ar`). Es el issuer del OAuth, la base de los links de subida y el único host, además de localhost, que se acepta en `Host` y `Origin`. | `http://127.0.0.1:<PORT>` |
+| `UTN_MCP_ACCESS_URL`, `UTN_MCP_ACCESS_SECRET` | Servicio que decide quién puede entrar. | — |
+| `UTN_MCP_ALLOWED_EMAILS` | Emails o dominios (`@frba.utn.edu.ar`) habilitados, separados por coma, si no hay `UTN_MCP_ACCESS_URL`. | Entra cualquiera con usuario de la UTN |
+| `UTN_MCP_LOGIN_URL` | Página donde el usuario renueva su sesión del aula; el agente se la pasa. | `<UTN_MCP_PUBLIC_URL>/login` |
 | `UTN_MCP_DB`, `UTN_MCP_KEY` | Base de sesiones y su clave de cifrado (32 bytes en base64). | En la carpeta de config |
+
+Con Docker, detrás de un reverse proxy con HTTPS en la misma máquina (red host, para que el rate limit del login vea la IP real):
+```bash
+docker build -t utn-mcp .
+docker run -d --name utn-mcp --network host --restart unless-stopped   -e HOST=127.0.0.1 -e PORT=8100 -e UTN_MCP_PUBLIC_URL=https://tu-dominio   -e UTN_MCP_KEY=$(openssl rand -base64 32) -v utn-mcp-data:/data utn-mcp
+```
+Guardá esa `UTN_MCP_KEY`: sin ella no se pueden descifrar las sesiones guardadas.
 
 ## Dónde se guardan tus datos
 Todo queda en tu computadora:
 - **Usuario y contraseña**: en el gestor de credenciales del sistema (Windows Credential Manager, Keychain en macOS, Secret Service en Linux).
 - **Token del aula virtual y cookies de sesión**: en `%APPDATA%\utn-mcp\session.json` (Windows) o `~/.config/utn-mcp/session.json` (Linux y macOS).
-- **En modo HTTP**: la sesión va cifrada en `utn-mcp.db`, en la misma carpeta, con la clave de `store.key` (o la de `UTN_MCP_KEY`). Del token del cliente solo se guarda el hash.
+- **En modo HTTP**: la contraseña no se guarda; la sesión va cifrada en `utn-mcp.db`, en la misma carpeta, con la clave de `store.key` (o la de `UTN_MCP_KEY`). Del token del cliente solo se guarda el hash.
 
 En Linux sin gestor de credenciales (servidores, Docker, WSL) podés definir las variables de entorno `UTN_USER` y `UTN_PASS` en lugar de usar `login`.
 

@@ -8,6 +8,7 @@ MCP server that gives an agent access to UTN FRBA's systems. It runs locally ove
 src/
   index.ts          CLI: picks STDIO, --http or `login`
   http.ts           HTTP entry point
+  oauth/            authorization server of the HTTP mode: UTN login, tokens, access policy
   server.ts         createServer(session): registers each platform's tools
   shared/           what serves more than one platform (http, html, documents, logger, paths, input)
   <platform>/

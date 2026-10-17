@@ -16,6 +16,16 @@ export function getSiteInfo(session: AulaSession): Promise<SiteInfo> {
     return callWs<SiteInfo>(session, "core_webservice_get_site_info");
 }
 
+/** El usuario dueño del token, con su email institucional (site_info no lo trae). */
+export async function getOwnUser(session: AulaSession): Promise<{ username: string; email: string | null }> {
+    const { userid, username } = await getSiteInfo(session);
+    const [user] = await callWs<{ email?: string }[]>(session, "core_user_get_users_by_field", {
+        field: "id",
+        "values[0]": userid,
+    });
+    return { username, email: user?.email || null };
+}
+
 export async function getUserCourses(session: AulaSession): Promise<Course[]> {
     const { userid } = await getSiteInfo(session);
     return callWs<Course[]>(session, "core_enrol_get_users_courses", { userid });

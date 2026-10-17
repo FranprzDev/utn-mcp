@@ -3,12 +3,13 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { storeFile, storeKeyFile } from "../paths.js";
-import type { IssuedToken, SessionStore, TokenKind } from "./session-store.js";
+import type { IssuedToken, RegisteredClient, SessionStore, StoredUser, TokenKind } from "./session-store.js";
 
 const SCHEMA = `
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY,
         utn_username TEXT NOT NULL UNIQUE,
+        email TEXT,
         created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS tokens (
@@ -26,6 +27,12 @@ const SCHEMA = `
         data BLOB NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (user_id, platform)
+    );
+    CREATE TABLE IF NOT EXISTS oauth_clients (
+        client_id TEXT PRIMARY KEY,
+        client_name TEXT,
+        redirect_uris TEXT NOT NULL,
+        created_at INTEGER NOT NULL
     );
 `;
 
@@ -63,16 +70,27 @@ export class SqliteStore implements SessionStore {
         // WAL: el login escribe mientras el servidor lee, desde otro proceso.
         db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
         db.exec(SCHEMA);
+        migrate(db);
         return new SqliteStore(db, await loadKey());
     }
 
-    async findOrCreateUser(utnUsername: string): Promise<number> {
+    async findOrCreateUser(utnUsername: string, email?: string): Promise<number> {
         const username = utnUsername.trim().toLowerCase();
         this.db
             .prepare("INSERT INTO users (utn_username, created_at) VALUES (?, ?) ON CONFLICT DO NOTHING")
             .run(username, now());
+        if (email) {
+            this.db.prepare("UPDATE users SET email = ? WHERE utn_username = ?").run(email.trim().toLowerCase(), username);
+        }
         const row = this.db.prepare("SELECT id FROM users WHERE utn_username = ?").get(username) as { id: number };
         return row.id;
+    }
+
+    async findUser(userId: number): Promise<StoredUser | null> {
+        const row = this.db.prepare("SELECT id, utn_username, email FROM users WHERE id = ?").get(userId) as
+            | { id: number; utn_username: string; email: string | null }
+            | undefined;
+        return row ? { id: row.id, utnUsername: row.utn_username, email: row.email } : null;
     }
 
     async issueToken(
@@ -128,6 +146,20 @@ export class SqliteStore implements SessionStore {
             .run(userId, platform, this.encrypt(data), now());
     }
 
+    async saveClient(client: RegisteredClient): Promise<void> {
+        this.db
+            .prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at) VALUES (?, ?, ?, ?)")
+            .run(client.clientId, client.clientName, JSON.stringify(client.redirectUris), now());
+    }
+
+    async findClient(clientId: string): Promise<RegisteredClient | null> {
+        const row = this.db
+            .prepare("SELECT client_id, client_name, redirect_uris FROM oauth_clients WHERE client_id = ?")
+            .get(clientId) as { client_id: string; client_name: string | null; redirect_uris: string } | undefined;
+        if (!row) return null;
+        return { clientId: row.client_id, clientName: row.client_name, redirectUris: JSON.parse(row.redirect_uris) };
+    }
+
     /** iv + tag + texto cifrado, en un solo blob. */
     private encrypt(plain: string): Buffer {
         const iv = randomBytes(IV_BYTES);
@@ -146,6 +178,12 @@ export class SqliteStore implements SessionStore {
             throw new Error("No se pudo descifrar la sesión: la clave (UTN_MCP_KEY o store.key) no es la que la cifró.");
         }
     }
+}
+
+/** Lo que `CREATE TABLE IF NOT EXISTS` no agrega a una base que ya existía. */
+function migrate(db: DatabaseSync) {
+    const columns = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+    if (!columns.some((c) => c.name === "email")) db.exec("ALTER TABLE users ADD COLUMN email TEXT");
 }
 
 /**
