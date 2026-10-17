@@ -209,7 +209,9 @@ function securityHeaders(https: boolean): RequestHandler {
         );
         res.setHeader("X-Frame-Options", "DENY");
         res.setHeader("X-Content-Type-Options", "nosniff");
-        res.setHeader("Referrer-Policy", "no-referrer");
+        // `same-origin` y no `no-referrer`: con `no-referrer` el navegador manda `Origin: null` en los POST de
+        // formularios, y el chequeo de Origin rechaza el login.
+        res.setHeader("Referrer-Policy", "same-origin");
         // Un año, en segundos.
         if (https) res.setHeader("Strict-Transport-Security", "max-age=31536000");
         next();
