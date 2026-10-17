@@ -6,13 +6,14 @@ export interface RedirectAllowlist {
     schemes: Set<string>;
 }
 
-/** Los callbacks de los clientes MCP conocidos (Claude, ChatGPT, Grok, VS Code web) y los esquemas de editores. */
+/** Los callbacks de los clientes MCP conocidos (Claude, ChatGPT, Grok, Gemini, VS Code web) y los esquemas de editores. */
 const DEFAULT_HOSTS = [
     "claude.ai",
     "claude.com",
     "chatgpt.com",
     "chat.openai.com",
     "grok.com",
+    "gemini.google.com",
     "vscode.dev",
     "insiders.vscode.dev",
 ];
