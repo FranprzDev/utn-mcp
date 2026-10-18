@@ -10,6 +10,7 @@ const REGIONALS: Record<string, Regional> = {
 
 const DEFAULT_REGIONAL = "frba";
 
+
 function resolve(): { baseUrl: string; ssoHost?: string } {
     const regional = (process.env.UTN_REGIONAL || "").trim().toLowerCase();
     if (regional && REGIONALS[regional]) {
