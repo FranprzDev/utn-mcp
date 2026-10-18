@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import type { CookieJar } from "tough-cookie";
 import type { Credentials } from "./credentials.js";
 import { AULA_BASE_URL, SSO_HOST } from "./constants.js";
+import { MoodleError } from "./moodle-api.js";
 
 export class LoginRequiredError extends Error {
     constructor(message = "Hace falta iniciar sesión: corré `utn-mcp login`.") {
@@ -84,32 +85,37 @@ export async function fetchToken(jar: CookieJar, credentials: Credentials | null
     throw unexpected(landing.url);
 }
 
-/** Intenta obtener el token vía /login/token.php (Moodle estándar). Devuelve null si falla. */
+/**
+ * Pide el token a /login/token.php (Moodle estándar). Devuelve null si el aula no lo expone
+ * (no contesta JSON), para seguir con launch.php; si contesta con un error, lo propaga.
+ */
 async function tryTokenPhp(credentials: Credentials): Promise<string | null> {
+    const res = await fetch(`${AULA_BASE_URL}/login/token.php`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+            username: credentials.username,
+            password: credentials.password,
+            service: "moodle_mobile_app",
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    let data: { token?: string; error?: string; errorcode?: string };
     try {
-        const res = await fetch(`${AULA_BASE_URL}/login/token.php`, {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                username: credentials.username,
-                password: credentials.password,
-                service: "moodle_mobile_app",
-            }),
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        const data = (await res.json()) as { token?: string; error?: string; errorcode?: string };
-        if (data.token) return data.token;
-        if (data.error || data.errorcode) {
-            // Credenciales inválidas: propagamos para que el usuario se entere.
-            if (data.errorcode === "invalidlogin" || /invalid login/i.test(data.error ?? "")) {
-                throw new InvalidCredentialsError(data.error);
-            }
-        }
-        return null;
-    } catch (e) {
-        if (e instanceof InvalidCredentialsError) throw e;
+        data = await res.json();
+    } catch {
         return null;
     }
+    if (data.token) return data.token;
+    if (data.errorcode === "invalidlogin" || /invalid login/i.test(data.error ?? "")) {
+        throw new InvalidCredentialsError(data.error);
+    }
+    // El mismo servicio lo usa launch.php: si token.php lo rechaza, seguir no sirve.
+    throw new MoodleError(
+        `El aula no dio el token (${data.errorcode ?? res.status}): ${data.error ?? "respuesta sin token"}. ` +
+            "Si dice que el servicio web no está disponible, lo tiene que habilitar el admin del aula.",
+        data.errorcode,
+    );
 }
 
 async function submitSsoForm(jar: CookieJar, html: string, { username, password }: Credentials): Promise<Landing> {
