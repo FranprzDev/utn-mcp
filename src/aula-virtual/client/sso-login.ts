@@ -11,9 +11,9 @@ export class LoginRequiredError extends Error {
 }
 
 export class InvalidCredentialsError extends Error {
-    constructor(motivo?: string) {
+    constructor(reason?: string) {
         const base = "El aula rechazó usuario o contraseña. Corré `utn-mcp login` para actualizarlos.";
-        super(motivo ? `${base} Motivo del aula: ${motivo}` : base);
+        super(reason ? `${base} Motivo del aula: ${reason}` : base);
         this.name = "InvalidCredentialsError";
     }
 }
@@ -63,13 +63,13 @@ export async function fetchToken(jar: CookieJar, credentials: Credentials | null
         if ("token" in loginPage) return loginPage.token;
         landing = await submitMoodleLoginForm(jar, loginPage.url, loginPage.html, credentials);
         if ("token" in landing) return landing.token;
-        const sigueEnLogin =
+        const stillOnLogin =
             landing.url.includes("/login") ||
             /alert-danger/i.test(landing.html) ||
             /loginerrors/i.test(landing.html);
-        if (sigueEnLogin) {
-            const motivo = extractLoginError(landing.html);
-            throw new InvalidCredentialsError(motivo);
+        if (stillOnLogin) {
+            const reason = extractLoginError(landing.html);
+            throw new InvalidCredentialsError(reason);
         }
     }
 

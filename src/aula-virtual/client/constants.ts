@@ -10,7 +10,7 @@ const REGIONALS: Record<string, Regional> = {
 
 const DEFAULT_REGIONAL = "frba";
 
-
+/** Elige el aula: la regional de `UTN_REGIONAL` si está en el registro; si no, `UTN_AULA_BASE_URL`; si no, FRBA. */
 function resolve(): { baseUrl: string; ssoHost?: string } {
     const regional = (process.env.UTN_REGIONAL || "").trim().toLowerCase();
     if (regional && REGIONALS[regional]) {
