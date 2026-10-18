@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import type { CookieJar } from "tough-cookie";
 import type { Credentials } from "./credentials.js";
 import { AULA_BASE_URL, SSO_HOST } from "./constants.js";
+import { MoodleError } from "./moodle-api.js";
 
 export class LoginRequiredError extends Error {
     constructor(message = "Hace falta iniciar sesión: corré `utn-mcp login`.") {
@@ -11,8 +12,9 @@ export class LoginRequiredError extends Error {
 }
 
 export class InvalidCredentialsError extends Error {
-    constructor() {
-        super("El SSO rechazó usuario o contraseña. Corré `utn-mcp login` para actualizarlos.");
+    constructor(reason?: string) {
+        const base = "El aula rechazó usuario o contraseña. Corré `utn-mcp login` para actualizarlos.";
+        super(reason ? `${base} Motivo del aula: ${reason}` : base);
         this.name = "InvalidCredentialsError";
     }
 }
@@ -23,46 +25,126 @@ const TIMEOUT_MS = 30_000;
 type Landing = { token: string } | { url: string; html: string };
 
 /**
- * Obtiene un token del web service siguiendo el flujo de launch.php por HTTP:
- * launch.php → login de Moodle → SSO (Keycloak) → Moodle → launch.php → moodlemobile://token=BASE64.
- * Las cookies del SSO quedan en `jar`: mientras sigan vivas no hace falta la contraseña.
+ * Obtiene un token del web service. Dos estrategias según la regional:
+ * - Regionales con SSO (Keycloak, ej. FRBA): flujo de launch.php, que usa la sesión del SSO.
+ * - Regionales con login directo de Moodle (ej. FRT): primero `login/token.php` (no depende del
+ *   plugin de mobile launch, que puede estar deshabilitado); si falla, flujo de launch.php.
+ * Las cookies quedan en `jar` para renovar el token sin contraseña mientras sigan vivas.
  */
 export async function fetchToken(jar: CookieJar, credentials: Credentials | null): Promise<string> {
+    // Regionales con login directo: intentamos token.php primero (no depende de launch.php).
+    if (!SSO_HOST) {
+        if (!credentials) throw new LoginRequiredError();
+        const viaTokenPhp = await tryTokenPhp(credentials);
+        if (viaTokenPhp) return viaTokenPhp;
+    }
+
     const launchUrl =
         `${AULA_BASE_URL}/admin/tool/mobile/launch.php` +
         `?service=moodle_mobile_app&passport=${randomInt(1e9)}&urlscheme=moodlemobile`;
 
-    // 1. Con sesión de Moodle viva, launch.php redirige directo al token.
     let landing = await follow(jar, launchUrl);
     if ("token" in landing) return landing.token;
 
-    // 2. Login de Moodle: el botón "Usuarios Institucionales" lleva al SSO.
     const oauthUrl = landing.html.match(/href="([^"]*\/auth\/oauth2\/login\.php[^"]*)"/)?.[1];
-    if (!oauthUrl) throw unexpected(landing.url);
-    landing = await follow(jar, decodeHtml(oauthUrl));
-    if ("token" in landing) return landing.token;
-
-    // 3. Si el SSO no nos recuerda, muestra su formulario: lo completamos.
-    if (new URL(landing.url).host === SSO_HOST) {
-        if (!credentials) throw new LoginRequiredError();
-        landing = await submitSsoForm(jar, landing.html, credentials);
+    if (oauthUrl) {
+        landing = await follow(jar, decodeHtml(oauthUrl));
         if ("token" in landing) return landing.token;
-        if (new URL(landing.url).host === SSO_HOST) throw new InvalidCredentialsError();
+
+        if (SSO_HOST && new URL(landing.url).host === SSO_HOST) {
+            if (!credentials) throw new LoginRequiredError();
+            landing = await submitSsoForm(jar, landing.html, credentials);
+            if ("token" in landing) return landing.token;
+            if (SSO_HOST && new URL(landing.url).host === SSO_HOST) throw new InvalidCredentialsError(extractLoginError(landing.html));
+        }
+    } else {
+        if (!credentials) throw new LoginRequiredError();
+        const loginPageUrl = `${AULA_BASE_URL}/login/index.php`;
+        const loginPage = await follow(jar, loginPageUrl);
+        if ("token" in loginPage) return loginPage.token;
+        landing = await submitMoodleLoginForm(jar, loginPage.url, loginPage.html, credentials);
+        if ("token" in landing) return landing.token;
+        const stillOnLogin =
+            landing.url.includes("/login") ||
+            /alert-danger/i.test(landing.html) ||
+            /loginerrors/i.test(landing.html);
+        if (stillOnLogin) {
+            const reason = extractLoginError(landing.html);
+            throw new InvalidCredentialsError(reason);
+        }
     }
 
-    // 4. Ya con sesión de Moodle (el SSO nos deja en el dashboard), pedimos el token de nuevo.
     landing = await follow(jar, launchUrl);
     if ("token" in landing) return landing.token;
+
+    if (!SSO_HOST && credentials) {
+        const viaTokenPhp = await tryTokenPhp(credentials);
+        if (viaTokenPhp) return viaTokenPhp;
+    }
+
     throw unexpected(landing.url);
 }
 
+/**
+ * Pide el token a /login/token.php (Moodle estándar). Devuelve null si el aula no lo expone
+ * (no contesta JSON), para seguir con launch.php; si contesta con un error, lo propaga.
+ */
+async function tryTokenPhp(credentials: Credentials): Promise<string | null> {
+    const res = await fetch(`${AULA_BASE_URL}/login/token.php`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+            username: credentials.username,
+            password: credentials.password,
+            service: "moodle_mobile_app",
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    let data: { token?: string; error?: string; errorcode?: string };
+    try {
+        data = await res.json();
+    } catch {
+        return null;
+    }
+    if (data.token) return data.token;
+    if (data.errorcode === "invalidlogin" || /invalid login/i.test(data.error ?? "")) {
+        throw new InvalidCredentialsError(data.error);
+    }
+    // El mismo servicio lo usa launch.php: si token.php lo rechaza, seguir no sirve.
+    throw new MoodleError(
+        `El aula no dio el token (${data.errorcode ?? res.status}): ${data.error ?? "respuesta sin token"}. ` +
+            "Si dice que el servicio web no está disponible, lo tiene que habilitar el admin del aula.",
+        data.errorcode,
+    );
+}
+
 async function submitSsoForm(jar: CookieJar, html: string, { username, password }: Credentials): Promise<Landing> {
-    // La página de Keycloak trae su config como JSON (kcContext); de ahí sale la URL del form.
     const action = html.match(/"loginAction"\s*:\s*("(?:[^"\\]|\\.)*")/)?.[1];
     if (!action) throw new Error("No se encontró el formulario del SSO; puede que haya cambiado.");
 
     const body = new URLSearchParams({ username, password, rememberMe: "on", credentialId: "" });
     return follow(jar, JSON.parse(action) as string, { method: "POST", body });
+}
+
+/** Login directo de Moodle (sin SSO): manda usuario y contraseña al formulario de /login/index.php. */
+async function submitMoodleLoginForm(
+    jar: CookieJar,
+    pageUrl: string,
+    html: string,
+    { username, password }: Credentials,
+): Promise<Landing> {
+    const tokenMatch =
+        html.match(/name="logintoken"\s+value="([^"]*)"/) ||
+        html.match(/value="([^"]*)"\s+name="logintoken"/);
+    const logintoken = tokenMatch?.[1] ?? "";
+
+    const actionMatch = html.match(/<form[^>]*action="([^"]*)"[^>]*>/i);
+    let action = actionMatch?.[1] ? decodeHtml(actionMatch[1]) : "";
+    if (!action) action = pageUrl;
+    if (!action.startsWith("http")) action = new URL(action, pageUrl).toString();
+
+    const body = new URLSearchParams({ username, password, logintoken, anchor: "" });
+    return follow(jar, action, { method: "POST", body });
 }
 
 /** Hace la request y sigue redirecciones a mano, guardando cookies en cada salto. */
@@ -101,6 +183,24 @@ export function decodeLaunchToken(url: string): string {
 }
 
 const decodeHtml = (s: string) => s.replaceAll("&amp;", "&");
+
+/** Extrae el mensaje de error que muestra Moodle/Keycloak en la página de login. */
+function extractLoginError(html: string): string | undefined {
+    const patterns = [
+        /alert-danger[^>]*>([\s\S]*?)<\/div>/i,
+        /alert-error[^>]*>([\s\S]*?)<\/div>/i,
+        /class="[^"]*error[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+        /<div[^>]*id="loginerrormessage"[^>]*>([\s\S]*?)<\/div>/i,
+    ];
+    for (const re of patterns) {
+        const m = html.match(re);
+        if (m?.[1]) {
+            const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+            if (text) return text;
+        }
+    }
+    return undefined;
+}
 
 const unexpected = (url: string) => {
     const { host, pathname } = new URL(url);

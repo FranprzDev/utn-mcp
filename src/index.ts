@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync } from "node:fs";
+import "./shared/load-env.js";
 import { parseArgs } from "node:util";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -23,13 +23,7 @@ const USAGE = `Uso:
 
 Si hay un .env en la carpeta actual, se lee al arrancar (ver .env.example).`;
 
-/** Lee el `.env` de la carpeta actual, si hay. Lo que ya está definido en el entorno no se pisa. */
-function loadDotenv() {
-    if (existsSync(".env")) process.loadEnvFile(".env");
-}
-
 async function main() {
-    loadDotenv();
     const { values, positionals } = parseArgs({
         allowPositionals: true,
         options: {
