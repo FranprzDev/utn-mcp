@@ -131,7 +131,18 @@ Si tu campus no está en la lista, podés dar la URL completa:
 UTN_AULA_BASE_URL=https://tu-campus.utn.edu.ar
 # UTN_SSO_HOST=auth.tu-campus.utn.edu.ar  # solo si usa Keycloak
 ```
-Y para sumarlo al registro para todos, agregá una entrada en `src/aula-virtual/client/constants.ts`. Después corré `utn-mcp login` con normalidad.
+Y para sumarlo al registro para todos, agregá una entrada en la constante `REGIONALS` de `src/aula-virtual/client/constants.ts`, con la clave de la regional y la URL de su campus (y `ssoHost` si usa Keycloak):
+
+```ts
+const REGIONALS: Record<string, Regional> = {
+    frba: { baseUrl: "https://aulasvirtuales.frba.utn.edu.ar", ssoHost: "auth.frba.utn.edu.ar" },
+    frt:  { baseUrl: "https://frt.cvg.utn.edu.ar" },
+    // tu regional:
+    frxx: { baseUrl: "https://tu-campus.utn.edu.ar", ssoHost: "auth.tu-campus.utn.edu.ar" }, // ssoHost solo si usa Keycloak
+};
+```
+
+Después corré `utn-mcp login` con normalidad. El login se adapta solo: si tiene `ssoHost` usa SSO (Keycloak), si no, login directo de Moodle.
 
 ### Modo HTTP (opcional)
 Necesita Node 22.13 o más nuevo. Primero, una vez:
