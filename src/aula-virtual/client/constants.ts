@@ -1,5 +1,3 @@
-// Registro de regionales de la UTN: cada una tiene su aula virtual (Moodle) y, si usa SSO
-// Keycloak como FRBA, el host del SSO. Para agregar una regional nueva, sumá una entrada acá.
 interface Regional {
     baseUrl: string;
     ssoHost?: string;
@@ -12,8 +10,6 @@ const REGIONALS: Record<string, Regional> = {
 
 const DEFAULT_REGIONAL = "frba";
 
-// La regional se elige con UTN_REGIONAL (ej. "frt"). Si no está en el registro, se puede dar
-// la URL completa con UTN_AULA_BASE_URL (y UTN_SSO_HOST si usa Keycloak).
 function resolve(): { baseUrl: string; ssoHost?: string } {
     const regional = (process.env.UTN_REGIONAL || "").trim().toLowerCase();
     if (regional && REGIONALS[regional]) {

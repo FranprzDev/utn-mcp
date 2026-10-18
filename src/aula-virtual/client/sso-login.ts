@@ -23,15 +23,7 @@ const TIMEOUT_MS = 30_000;
 
 type Landing = { token: string } | { url: string; html: string };
 
-/**
- * Obtiene un token del web service. Dos estrategias según la regional:
- * - Regionales con SSO (Keycloak, ej. FRBA): flujo de launch.php, que usa la sesión del SSO.
- * - Regionales con login directo de Moodle (ej. FRT): primero `login/token.php` (no depende del
- *   plugin de mobile launch, que puede estar deshabilitado); si falla, flujo de launch.php.
- * Las cookies quedan en `jar` para renovar el token sin contraseña mientras sigan vivas.
- */
 export async function fetchToken(jar: CookieJar, credentials: Credentials | null): Promise<string> {
-    // Regionales con login directo: intentamos token.php primero (no depende de launch.php).
     if (!SSO_HOST) {
         if (!credentials) throw new LoginRequiredError();
         const viaTokenPhp = await tryTokenPhp(credentials);
@@ -42,18 +34,14 @@ export async function fetchToken(jar: CookieJar, credentials: Credentials | null
         `${AULA_BASE_URL}/admin/tool/mobile/launch.php` +
         `?service=moodle_mobile_app&passport=${randomInt(1e9)}&urlscheme=moodlemobile`;
 
-    // 1. Con sesión de Moodle viva, launch.php redirige directo al token.
     let landing = await follow(jar, launchUrl);
     if ("token" in landing) return landing.token;
 
-    // 2. Login de Moodle. En FRBA hay un botón "Usuarios Institucionales" que lleva al SSO Keycloak;
-    // en otras regionales (ej. FRT) el login es directo de Moodle, sin SSO.
     const oauthUrl = landing.html.match(/href="([^"]*\/auth\/oauth2\/login\.php[^"]*)"/)?.[1];
     if (oauthUrl) {
         landing = await follow(jar, decodeHtml(oauthUrl));
         if ("token" in landing) return landing.token;
 
-        // 3. Si el SSO no nos recuerda, muestra su formulario: lo completamos.
         if (SSO_HOST && new URL(landing.url).host === SSO_HOST) {
             if (!credentials) throw new LoginRequiredError();
             landing = await submitSsoForm(jar, landing.html, credentials);
@@ -61,15 +49,12 @@ export async function fetchToken(jar: CookieJar, credentials: Credentials | null
             if (SSO_HOST && new URL(landing.url).host === SSO_HOST) throw new InvalidCredentialsError(extractLoginError(landing.html));
         }
     } else {
-        // Login directo de Moodle: mandamos usuario y contraseña al formulario de /login/index.php.
         if (!credentials) throw new LoginRequiredError();
-        // Aseguramos partir de la página de login real (launch.php puede no redirigir).
         const loginPageUrl = `${AULA_BASE_URL}/login/index.php`;
         const loginPage = await follow(jar, loginPageUrl);
         if ("token" in loginPage) return loginPage.token;
         landing = await submitMoodleLoginForm(jar, loginPage.url, loginPage.html, credentials);
         if ("token" in landing) return landing.token;
-        // Login fallido si seguimos en la página de login o hay un error visible.
         const sigueEnLogin =
             landing.url.includes("/login") ||
             /alert-danger/i.test(landing.html) ||
@@ -80,11 +65,9 @@ export async function fetchToken(jar: CookieJar, credentials: Credentials | null
         }
     }
 
-    // 4. Ya con sesión de Moodle, pedimos el token de nuevo vía launch.php.
     landing = await follow(jar, launchUrl);
     if ("token" in landing) return landing.token;
 
-    // Fallback final para regionales directas donde launch.php esté deshabilitado.
     if (!SSO_HOST && credentials) {
         const viaTokenPhp = await tryTokenPhp(credentials);
         if (viaTokenPhp) return viaTokenPhp;
@@ -93,7 +76,6 @@ export async function fetchToken(jar: CookieJar, credentials: Credentials | null
     throw unexpected(landing.url);
 }
 
-/** Intenta obtener el token vía /login/token.php (Moodle estándar). Devuelve null si falla. */
 async function tryTokenPhp(credentials: Credentials): Promise<string | null> {
     try {
         const res = await fetch(`${AULA_BASE_URL}/login/token.php`, {
@@ -109,7 +91,6 @@ async function tryTokenPhp(credentials: Credentials): Promise<string | null> {
         const data = (await res.json()) as { token?: string; error?: string; errorcode?: string };
         if (data.token) return data.token;
         if (data.error || data.errorcode) {
-            // Credenciales inválidas: propagamos para que el usuario se entere.
             if (data.errorcode === "invalidlogin" || /invalid login/i.test(data.error ?? "")) {
                 throw new InvalidCredentialsError(data.error);
             }
@@ -122,7 +103,6 @@ async function tryTokenPhp(credentials: Credentials): Promise<string | null> {
 }
 
 async function submitSsoForm(jar: CookieJar, html: string, { username, password }: Credentials): Promise<Landing> {
-    // La página de Keycloak trae su config como JSON (kcContext); de ahí sale la URL del form.
     const action = html.match(/"loginAction"\s*:\s*("(?:[^"\\]|\\.)*")/)?.[1];
     if (!action) throw new Error("No se encontró el formulario del SSO; puede que haya cambiado.");
 
@@ -130,7 +110,6 @@ async function submitSsoForm(jar: CookieJar, html: string, { username, password 
     return follow(jar, JSON.parse(action) as string, { method: "POST", body });
 }
 
-/** Login directo de Moodle (sin SSO): manda usuario y contraseña al formulario de /login/index.php. */
 async function submitMoodleLoginForm(
     jar: CookieJar,
     pageUrl: string,
@@ -151,7 +130,6 @@ async function submitMoodleLoginForm(
     return follow(jar, action, { method: "POST", body });
 }
 
-/** Hace la request y sigue redirecciones a mano, guardando cookies en cada salto. */
 async function follow(jar: CookieJar, url: string, init?: RequestInit): Promise<Landing> {
     for (let i = 0; i < MAX_REDIRECTS; i++) {
         const cookie = await jar.getCookieString(url);
@@ -170,7 +148,7 @@ async function follow(jar: CookieJar, url: string, init?: RequestInit): Promise<
             await res.body?.cancel();
             if (location.startsWith("moodlemobile://")) return { token: decodeLaunchToken(location) };
             url = new URL(location, url).toString();
-            init = undefined; // tras un redirect, siempre GET
+            init = undefined;
             continue;
         }
         return { url, html: await res.text() };
@@ -178,7 +156,6 @@ async function follow(jar: CookieJar, url: string, init?: RequestInit): Promise<
     throw new Error("Demasiadas redirecciones en el login.");
 }
 
-/** moodlemobile://token=BASE64(siteid:::token[:::privatetoken]) → token */
 export function decodeLaunchToken(url: string): string {
     const encoded = decodeURIComponent(url.split("token=")[1] ?? "");
     const parts = Buffer.from(encoded, "base64").toString("utf8").split(":::");
@@ -188,7 +165,6 @@ export function decodeLaunchToken(url: string): string {
 
 const decodeHtml = (s: string) => s.replaceAll("&amp;", "&");
 
-/** Extrae el mensaje de error que muestra Moodle/Keycloak en la página de login. */
 function extractLoginError(html: string): string | undefined {
     const patterns = [
         /alert-danger[^>]*>([\s\S]*?)<\/div>/i,
