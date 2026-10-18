@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import "./shared/load-env.js";
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { AuthInfo } from "@modelcontextprotocol/server";

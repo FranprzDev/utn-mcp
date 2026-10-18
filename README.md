@@ -119,6 +119,20 @@ utn-mcp login
 ```
 y en la config del cliente usás `"command": "utn-mcp"` sin argumentos.
 
+### Otra regional de la UTN (FRT, etc.)
+Por defecto el servidor apunta al aula virtual de la UTN FRBA. Para otra regional, creá un archivo `.env` en la carpeta desde donde corrés `utn-mcp` (o definí las variables en el entorno) con:
+```bash
+UTN_REGIONAL=frt
+```
+Regionales incluidas: `frba`, `frt`. El login se adapta solo: si el campus usa SSO Keycloak (como FRBA) se configura automáticamente; si no, es login directo de Moodle.
+
+Si tu campus no está en la lista, podés dar la URL completa:
+```bash
+UTN_AULA_BASE_URL=https://tu-campus.utn.edu.ar
+# UTN_SSO_HOST=auth.tu-campus.utn.edu.ar  # solo si usa Keycloak
+```
+Y para sumarlo al registro para todos, agregá una entrada en `src/aula-virtual/client/constants.ts`. Después corré `utn-mcp login` con normalidad.
+
 ### Modo HTTP (opcional)
 Necesita Node 22.13 o más nuevo. Primero, una vez:
 ```bash
