@@ -10,11 +10,24 @@ const REGIONALS: Record<string, Regional> = {
 
 const DEFAULT_REGIONAL = "frba";
 
+/** `UTN_REGIONAL` no está en el registro: sin cortar acá, las credenciales irían al SSO de FRBA. */
+export class UnknownRegionalError extends Error {
+    name = "UnknownRegionalError";
+    constructor(regional: string) {
+        super(
+            `UTN_REGIONAL="${regional}" no es una regional conocida. Las válidas son: ${Object.keys(REGIONALS).join(", ")}. ` +
+                "Si tu campus no está en la lista, borrá UTN_REGIONAL y definí UTN_AULA_BASE_URL con la URL del aula " +
+                "(y UTN_SSO_HOST si usa Keycloak).",
+        );
+    }
+}
+
 /** Elige el aula: la regional de `UTN_REGIONAL` si está en el registro; si no, `UTN_AULA_BASE_URL`; si no, FRBA. */
 function resolve(): { baseUrl: string; ssoHost?: string } {
     const regional = (process.env.UTN_REGIONAL || "").trim().toLowerCase();
-    if (regional && REGIONALS[regional]) {
+    if (regional) {
         const r = REGIONALS[regional];
+        if (!r) throw new UnknownRegionalError(regional);
         return { baseUrl: r.baseUrl, ssoHost: r.ssoHost };
     }
     if (process.env.UTN_AULA_BASE_URL) {
