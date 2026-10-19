@@ -35,7 +35,8 @@ function downloadUrl(url: string): URL {
         throw new Error(`URL inválida: "${url}". Usá la \`url\` de un archivo tal como la devuelve aula_open.`);
     }
     const path = u.pathname.startsWith(WS_PATH) ? u.pathname : u.pathname.startsWith(WEB_PATH) ? WS_PATH + u.pathname.slice(WEB_PATH.length) : null;
-    if (u.origin !== ORIGIN || !path) {
+    // `origin` ignora `usuario@`: con eso `fetch` rechaza la URL y su error, con el token ya puesto, llega al modelo.
+    if (u.origin !== ORIGIN || u.username || u.password || !path) {
         throw new Error(`Solo se pueden leer archivos del aula virtual (${ORIGIN}${WEB_PATH}...).`);
     }
     u.pathname = path;

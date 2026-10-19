@@ -6,6 +6,7 @@ interface Regional {
 const REGIONALS: Record<string, Regional> = {
     frba: { baseUrl: "https://aulasvirtuales.frba.utn.edu.ar", ssoHost: "auth.frba.utn.edu.ar" },
     frt: { baseUrl: "https://frt.cvg.utn.edu.ar" },
+    frre: { baseUrl: "https://frre.cvg.utn.edu.ar" },
 };
 
 const DEFAULT_REGIONAL = "frba";
