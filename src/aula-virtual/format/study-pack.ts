@@ -30,7 +30,9 @@ const ADMIN_SCAN_CHARS = 300;
  */
 async function isAdminMaterial(bytes: Uint8Array, filename: string): Promise<boolean> {
     try {
-        const doc = await openDocument(bytes, filename);
+        // pdf.js toma posesión del buffer (lo transfiere a su worker): hay que pasarle una copia
+        // o los bytes originales quedan inutilizables para el merge que viene después.
+        const doc = await openDocument(bytes.slice(), filename);
         try {
             if (doc.format !== "pdf") return false;
             const first = await doc.part(1);
