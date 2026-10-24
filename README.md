@@ -19,6 +19,7 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_list_courses` | Lista tus cursos. Es el punto de partida. |
 | `aula_open` | Entra a un curso, un módulo, un foro o una discusión. Cada respuesta trae las direcciones de lo que hay adentro y de un nivel más arriba, así el agente navega sin perderse. |
 | `aula_read_file` | Lee un archivo del aula, por partes cuando es largo. |
+| `aula_study_pack` | Une todos los PDF de una materia en un solo archivo con índice, guardado en tu compu. Solo en modo local. |
 | `aula_get_site_info` | Datos de tu usuario y de tu regional en el aula virtual. |
 | `aula_forum_post` | Abre un hilo en un foro o responde en una discusión. |
 | `aula_forum_edit_post` | Edita una publicación tuya. |
