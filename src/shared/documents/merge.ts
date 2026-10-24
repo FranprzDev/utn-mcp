@@ -26,8 +26,9 @@ const INDEX_ROWS_PER_PAGE = 40;
 
 /**
  * Une PDFs en uno solo, con un índice al principio que dice en qué página empieza cada uno.
- * El que no se puede abrir (roto o con clave) se salta y queda en `skipped`. El índice se
- * arma al final, cuando se sabe qué archivos entraron, y se inserta al frente.
+ * El que no se puede abrir (roto o con clave) se salta y queda en `skipped`: pdf-lib no
+ * desencripta, así que un PDF con clave entraría con páginas rotas. El índice se arma al
+ * final, cuando se sabe qué archivos entraron, y se inserta al frente.
  */
 export async function mergePdfs(
     files: MergeInput[],
@@ -45,10 +46,15 @@ export async function mergePdfs(
         const file = files[index];
         let src: PDFDocument;
         try {
-            // ignoreEncryption: los apuntes con clave vacía se leen igual sin saberla.
+            // ignoreEncryption solo para que `load` no rechace el archivo: así lo listamos
+            // en `skipped` con el motivo en vez de romper todo el pack.
             src = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
         } catch {
-            skipped.push({ index, title: file.title, reason: "no se pudo abrir (está roto o tiene clave)" });
+            skipped.push({ index, title: file.title, reason: "no se pudo abrir (está roto)" });
+            continue;
+        }
+        if (src.isEncrypted) {
+            skipped.push({ index, title: file.title, reason: "tiene clave" });
             continue;
         }
         const pages = await out.copyPages(src, src.getPageIndices());
