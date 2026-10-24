@@ -23,8 +23,8 @@ const capFromEnv = (raw: string | undefined, fallback: number): number => {
 };
 const MAX_PACK_FILES = capFromEnv(process.env.UTN_MCP_PACK_MAX_FILES, 150);
 const MAX_PACK_BYTES = capFromEnv(process.env.UTN_MCP_PACK_MAX_MB, 300) * 1024 * 1024;
-/** El PDF final no debería pasar de 30 MB: si pasa, se genera igual pero queda avisado. */
-const MAX_FINAL_BYTES = 30 * 1024 * 1024;
+/** Máximo del PDF final: si lo supera NO se guarda; se informa el peso y las opciones. */
+const MAX_FINAL_MB = capFromEnv(process.env.UTN_MCP_PACK_MAX_FINAL_MB, 30);
 
 const isPdf = (e: CourseFileEntry) =>
     e.file.mimetype === "application/pdf" || e.file.filename.toLowerCase().endsWith(".pdf");
@@ -78,6 +78,26 @@ export interface StudyPackOptions {
     forceInclude?: string[];
     /** Nombres de archivo a dejar afuera a pedido. */
     forceExclude?: string[];
+}
+
+/**
+ * Escribe el pack sin pisar packs anteriores: nombre con fecha-hora y, si ya existe (dos packs
+ * en el mismo segundo), un sufijo -2, -3... La escritura es atómica por nombre (bandera "wx").
+ */
+export async function writePackFile(dir: string, courseName: string, bytes: Uint8Array): Promise<string> {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const base = join(dir, `${safeFileName(courseName)}-apuntes-${stamp}`);
+    for (let n = 1; ; n++) {
+        const candidate = n === 1 ? `${base}.pdf` : `${base}-${n}.pdf`;
+        try {
+            await writeFile(candidate, bytes, { flag: "wx" });
+            return candidate;
+        } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        }
+    }
 }
 
 /**
@@ -196,19 +216,16 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
 
     const dir = exportsDir();
     await mkdir(dir, { recursive: true });
-    // Nombre con fecha-hora: regenerar el pack de una materia nunca pisa el PDF anterior.
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const path = join(dir, `${safeFileName(courseName)}-apuntes-${stamp}.pdf`);
-    await writeFile(path, bytes);
-
-    if (bytes.length > MAX_FINAL_BYTES) {
+    const maxFinalBytes = MAX_FINAL_MB * 1024 * 1024;
+    if (bytes.length > maxFinalBytes) {
         const mb = Math.round((bytes.length / 1024 / 1024) * 10) / 10;
-        avisos.push(
-            `el PDF final pesa ${mb} MB, más del máximo recomendado (30 MB): se generó igual, pero puede ser incómodo de abrir o compartir`,
+        throw new Error(
+            `El PDF final pesa ${mb} MB, más del máximo (${MAX_FINAL_MB} MB): no se guardó. ` +
+                "Opciones: excluir archivos con `excluir` (la propuesta de `solo_listar` muestra qué entra) " +
+                "o, si el usuario acepta un PDF más pesado, subir el tope con UTN_MCP_PACK_MAX_FINAL_MB.",
         );
     }
+    const path = await writePackFile(dir, courseName, bytes);
 
     return {
         archivo: path,
