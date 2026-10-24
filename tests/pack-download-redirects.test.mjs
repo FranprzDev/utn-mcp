@@ -1,9 +1,9 @@
-// Regresión: fetchFile solo sigue redirects al propio aula y a rutas de archivos (pluginfile).
+// Regresión: la descarga del pack solo sigue redirects al propio aula y a rutas de archivos (pluginfile).
 // Servidor local + sesión falsa: no toca el aula real ni necesita credenciales.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { fetchFile } from "../build/aula-virtual/client/moodle-api.js";
+import { fetchPackFile } from "../build/aula-virtual/format/study-pack.js";
 
 let server;
 let base;
@@ -39,7 +39,7 @@ before(async () => {
 after(() => server.close());
 
 const fetchText = async (path) => {
-    const { bytes } = await fetchFile(session, new URL(base + path), 1024 * 1024);
+    const bytes = await fetchPackFile(session, new URL(base + path), 1024 * 1024);
     return Buffer.from(bytes).toString();
 };
 
