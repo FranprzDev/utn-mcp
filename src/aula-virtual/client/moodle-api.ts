@@ -57,16 +57,43 @@ export async function fetchFile(
     maxBytes: number,
 ): Promise<{ bytes: Uint8Array; contentType: string | null }> {
     let token = await session.getToken();
+    const { baseUrl } = await session.getRegional();
+    const aulaOrigin = new URL(baseUrl).origin;
+    let current = new URL(url);
+    let redirects = 0;
 
     for (let attempt = 0; ; attempt++) {
-        const withToken = new URL(url);
+        const withToken = new URL(current);
         withToken.searchParams.set("token", token);
 
         let res: Response;
         try {
-            res = await fetch(withToken, { signal: AbortSignal.timeout(60_000) });
+            // Redirects manuales: solo se sigue un redirect al PROPIO aula y a una ruta de
+            // archivos (pluginfile). Cualquier otro destino se rechaza: no hay garantía de qué
+            // le llega, y un pluginfile legítimo del aula no redirige afuera.
+            res = await fetch(withToken, { signal: AbortSignal.timeout(60_000), redirect: "manual" });
         } catch (e) {
             throw new MoodleError(`No se pudo bajar el archivo: ${(e as Error).message}`);
+        }
+
+        if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get("location");
+            const next = location ? new URL(location, current) : null;
+            redirects++;
+            if (
+                redirects > 3 ||
+                !next ||
+                next.username ||
+                next.password ||
+                next.origin !== aulaOrigin ||
+                !next.pathname.includes("pluginfile.php")
+            ) {
+                throw new MoodleError(
+                    `El aula redirigió la descarga a una dirección no permitida (${location ?? "sin destino"})`,
+                );
+            }
+            current = next;
+            continue;
         }
 
         const contentType = res.headers.get("content-type");
