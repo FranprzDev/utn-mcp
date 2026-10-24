@@ -57,7 +57,14 @@ export async function mergePdfs(
             skipped.push({ index, title: file.title, reason: "tiene clave" });
             continue;
         }
-        const pages = await out.copyPages(src, src.getPageIndices());
+        let pages;
+        try {
+            pages = await out.copyPages(src, src.getPageIndices());
+        } catch {
+            // Abre bien pero tiene objetos que no se pueden copiar: se salta como los rotos.
+            skipped.push({ index, title: file.title, reason: "no se pudieron copiar sus páginas" });
+            continue;
+        }
         if (!pages.length) {
             skipped.push({ index, title: file.title, reason: "no tiene páginas" });
             continue;
