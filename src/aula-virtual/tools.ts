@@ -189,9 +189,10 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "pero no genera el archivo, y devuelve `incluiria` y `omitidos` con motivos. " +
                     "Después se llama de nuevo con `incluir` (nombres de archivo a incluir aunque " +
                     "parezcan administrativos) o `excluir` (nombres a dejar afuera); un nombre que no " +
-                    "existe en el curso sale avisado en `avisos`. Si el PDF final supera los 30 MB también se " +
-                    "avisa en `avisos` (se genera igual). Los PDF se bajan de a uno, dos veces si " +
-                    "se revisa primero.\n\n" +
+                    "existe en el curso sale avisado en `avisos`. Máximo del PDF final: 30 MB; si lo supera NO " +
+                    "se guarda y el error dice el peso y las opciones (excluir archivos o subir el " +
+                    "tope con UTN_MCP_PACK_MAX_FINAL_MB si el usuario lo decide). Los PDF se bajan " +
+                    "de a uno, dos veces si se revisa primero.\n\n" +
                     "Por memoria hay topes por pack (150 archivos y 300 MB, configurables con las " +
                     "variables UTN_MCP_PACK_MAX_FILES y UTN_MCP_PACK_MAX_MB): lo que queda afuera por un " +
                     "tope también sale listado, para pedir el resto en otro pack.\n\n" +
