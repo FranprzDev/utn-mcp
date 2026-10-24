@@ -1,4 +1,4 @@
-import { PDFArray, PDFDocument, PDFName, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFArray, PDFDocument, PDFName, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 /** Un PDF a unir, con el nombre con que aparece en el índice. */
 export interface MergeInput {
@@ -154,10 +154,11 @@ async function writeIndex(out: PDFDocument, merged: MergedFile[], indexPages: nu
 }
 
 /**
- * Agrega a cada página de contenido una franja vacía arriba con "Volver al índice" enlazado
- * a la primera página del índice. La franja AGRANDA la página (media y crop box): el material
- * original queda intacto y el enlace nunca lo tapa. En una página rotada la franja queda de
- * costado y el texto acostado; el enlace funciona igual.
+ * Agrega a cada página de contenido una franja vacía con "Volver al índice" enlazado a la
+ * primera página del índice. La franja AGRANDA la página por el borde que queda arriba al
+ * leerla (arriba sin rotación; a la izquierda, abajo o a la derecha según la rotación de la
+ * página) y el texto se dibuja ya rotado: se lee horizontal en cualquier orientación y, al
+ * ser espacio agregado, nunca tapa el material. Toda la franja es clickeable.
  */
 function addBackLinks(out: PDFDocument, indexPages: number, font: PDFFont): void {
     const firstIndexPage = out.getPage(0);
@@ -171,14 +172,59 @@ function addBackLinks(out: PDFDocument, indexPages: number, font: PDFFont): void
         // MediaBox, y leerlo después de agrandarlo agrandaría el CropBox dos veces.
         const media = page.getMediaBox();
         const crop = page.getCropBox();
-        page.setMediaBox(media.x, media.y, media.width, media.height + BACK_STRIP);
-        page.setCropBox(crop.x, crop.y, crop.width, crop.height + BACK_STRIP);
-        const oldTop = media.y + media.height;
-        const x = media.x + media.width - 30 - textWidth;
-        const y = oldTop + 5;
-        page.drawText(BACK_LABEL, { x, y, size, font, color });
-        page.drawLine({ start: { x, y: y - 1.5 }, end: { x: x + textWidth, y: y - 1.5 }, thickness: 0.5, color });
-        addPageLink(out, page, [x - 3, oldTop, x + textWidth + 3, oldTop + BACK_STRIP], firstIndexPage);
+        const { x: X, y: Y, width: w, height: h } = media;
+        const rotation = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+
+        // Posición del texto y dirección del subrayado según el borde por donde crece la página.
+        let textX: number, textY: number, lineStart: { x: number; y: number }, lineEnd: { x: number; y: number };
+        let strip: [number, number, number, number];
+        let rotate: ReturnType<typeof degrees>;
+        switch (rotation) {
+            case 90:
+                // Al leerla rotada 90° el borde izquierdo queda arriba: la franja crece a la izquierda.
+                page.setMediaBox(X - BACK_STRIP, Y, w + BACK_STRIP, h);
+                page.setCropBox(crop.x - BACK_STRIP, crop.y, crop.width + BACK_STRIP, crop.height);
+                strip = [X - BACK_STRIP, Y, X, Y + h];
+                rotate = degrees(90);
+                textX = X - BACK_STRIP + 5 + size;
+                textY = Y + h - 30 - textWidth;
+                lineStart = { x: textX + 1.5, y: textY };
+                lineEnd = { x: textX + 1.5, y: textY + textWidth };
+                break;
+            case 180:
+                page.setMediaBox(X, Y - BACK_STRIP, w, h + BACK_STRIP);
+                page.setCropBox(crop.x, crop.y - BACK_STRIP, crop.width, crop.height + BACK_STRIP);
+                strip = [X, Y - BACK_STRIP, X + w, Y];
+                rotate = degrees(180);
+                textX = X + 30 + textWidth;
+                textY = Y - BACK_STRIP + 5 + size;
+                lineStart = { x: textX, y: textY + 1.5 };
+                lineEnd = { x: textX - textWidth, y: textY + 1.5 };
+                break;
+            case 270:
+                page.setMediaBox(X, Y, w + BACK_STRIP, h);
+                page.setCropBox(crop.x, crop.y, crop.width + BACK_STRIP, crop.height);
+                strip = [X + w, Y, X + w + BACK_STRIP, Y + h];
+                rotate = degrees(270);
+                textX = X + w + BACK_STRIP - 5 - size;
+                textY = Y + 30 + textWidth;
+                lineStart = { x: textX - 1.5, y: textY };
+                lineEnd = { x: textX - 1.5, y: textY - textWidth };
+                break;
+            default:
+                page.setMediaBox(X, Y, w, h + BACK_STRIP);
+                page.setCropBox(crop.x, crop.y, crop.width, crop.height + BACK_STRIP);
+                strip = [X, Y + h, X + w, Y + h + BACK_STRIP];
+                rotate = degrees(0);
+                textX = X + w - 30 - textWidth;
+                textY = Y + h + 5;
+                lineStart = { x: textX, y: textY - 1.5 };
+                lineEnd = { x: textX + textWidth, y: textY - 1.5 };
+                break;
+        }
+        page.drawText(BACK_LABEL, { x: textX, y: textY, size, font, color, rotate });
+        page.drawLine({ start: lineStart, end: lineEnd, thickness: 0.5, color });
+        addPageLink(out, page, strip, firstIndexPage);
     }
 }
 
