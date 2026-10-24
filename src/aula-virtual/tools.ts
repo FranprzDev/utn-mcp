@@ -189,8 +189,9 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "pero no genera el archivo, y devuelve `incluiria` y `omitidos` con motivos. " +
                     "Después se llama de nuevo con `incluir` (nombres de archivo a incluir aunque " +
                     "parezcan administrativos) o `excluir` (nombres a dejar afuera); un nombre que no " +
-                    "existe en el curso sale avisado en `avisos`. Los PDF se bajan de a uno, dos veces " +
-                    "si se revisa primero.\n\n" +
+                    "existe en el curso sale avisado en `avisos`. Si el PDF final supera los 30 MB también se " +
+                    "avisa en `avisos` (se genera igual). Los PDF se bajan de a uno, dos veces si " +
+                    "se revisa primero.\n\n" +
                     "Por memoria hay topes por pack (150 archivos y 300 MB, configurables con las " +
                     "variables UTN_MCP_PACK_MAX_FILES y UTN_MCP_PACK_MAX_MB): lo que queda afuera por un " +
                     "tope también sale listado, para pedir el resto en otro pack.\n\n" +
@@ -234,7 +235,8 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                                 "conserve. Útil después de revisar la propuesta de `solo_listar`.",
                         ),
                 }),
-                annotations: READ_ONLY,
+                // No es READ_ONLY: no toca el aula, pero escribe un archivo en el disco del usuario.
+                annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
             },
             async ({ direccion, incluir_administrativo, solo_listar, incluir, excluir }) => {
                 try {
