@@ -173,25 +173,38 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
             "aula_study_pack",
             {
                 description:
-                    "Arma un único PDF con todo el material de una materia para estudiar: busca los PDF " +
+                    "Arma un único PDF con el material de estudio de una materia (el usuario le puede " +
+                    "decir compilado de estudio, apuntes unidos, 'machacado' o 'titán'): busca los PDF " +
                     "de todas las secciones del curso, los baja y los une en un solo archivo con un " +
                     "índice al principio que dice en qué página empieza cada uno.\n\n" +
+                    "Por defecto deja afuera el material administrativo (cronogramas, programas " +
+                    "analíticos, bibliografías, formatos de entrega, detectado por el contenido de la " +
+                    "primera página) y los duplicados exactos, porque el PDF es para estudiar; con " +
+                    "`incluir_administrativo` en true une absolutamente todo. Es un compilado, no un " +
+                    "resumen: el contenido queda íntegro.\n\n" +
                     "La `direccion` del curso sale de aula_list_courses. El PDF queda guardado en la " +
                     "compu del usuario: la respuesta trae la ruta en `archivo`, lo que incluyó " +
                     "(`materiales`, con su sección, su módulo y la página en que empieza cada uno) y " +
-                    "lo que no se pudo incluir (`omitidos`, con el motivo). Los archivos que no son " +
-                    "PDF no entran: para leerlos o pasarle su link al usuario, usá aula_open y " +
+                    "lo que no entró (`omitidos`, con el motivo). Los archivos que no son PDF no " +
+                    "entran: para leerlos o pasarle su link al usuario, usá aula_open y " +
                     "aula_read_file.",
                 inputSchema: z.object({
                     direccion: z
                         .string()
                         .describe('Dirección del curso, de aula_list_courses. Ej: "/curso/691".'),
+                    incluir_administrativo: z
+                        .boolean()
+                        .optional()
+                        .describe(
+                            "Si es true, une TODOS los PDF del curso, incluido el material administrativo. " +
+                                "Por defecto ese material queda afuera.",
+                        ),
                 }),
                 annotations: READ_ONLY,
             },
-            async ({ direccion }) => {
+            async ({ direccion, incluir_administrativo }) => {
                 try {
-                    return json(await buildStudyPack(session, direccion));
+                    return json(await buildStudyPack(session, direccion, incluir_administrativo));
                 } catch (e) {
                     return failure(e);
                 }
