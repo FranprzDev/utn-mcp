@@ -176,7 +176,9 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "Arma un único PDF con el material de estudio de una materia (el usuario le puede " +
                     "decir compilado de estudio, apuntes unidos, 'machacado' o 'titán'): busca los PDF " +
                     "de todas las secciones del curso, los baja y los une en un solo archivo con un " +
-                    "índice al principio que dice en qué página empieza cada uno.\n\n" +
+                    "índice clickeable al principio: cada entrada abre la página donde empieza " +
+                    "ese material, y cada página tiene arriba un enlace \"Volver al índice\" (en " +
+                    "una franja agregada, sin tapar el contenido).\n\n" +
                     "Por defecto deja afuera el material administrativo (cronogramas, programas " +
                     "analíticos, bibliografías, formatos de entrega, detectado por palabras clave en " +
                     "el texto de las primeras dos páginas) y los duplicados exactos, porque el PDF es " +
