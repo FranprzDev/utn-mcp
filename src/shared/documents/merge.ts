@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFArray, PDFDocument, PDFName, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 /** Un PDF a unir, con el nombre con que aparece en el índice. */
 export interface MergeInput {
@@ -25,10 +25,40 @@ export interface SkippedFile {
 const INDEX_ROWS_PER_PAGE = 40;
 
 /**
- * Une PDFs en uno solo, con un índice al principio que dice en qué página empieza cada uno.
- * El que no se puede abrir (roto o con clave) se salta y queda en `skipped`: pdf-lib no
- * desencripta, así que un PDF con clave entraría con páginas rotas. El índice se arma al
- * final, cuando se sabe qué archivos entraron, y se inserta al frente.
+ * Alto de la franja que se AGREGA arriba de cada página de contenido para el enlace de
+ * vuelta al índice: la página queda un poco más alta, así el enlace nunca tapa el material.
+ */
+const BACK_STRIP = 18;
+const BACK_LABEL = "Volver al índice";
+
+/**
+ * Agrega a `page` un enlace rectangular (anotación Link sin borde) que muestra `dest` entera.
+ */
+function addPageLink(out: PDFDocument, page: PDFPage, rect: [number, number, number, number], dest: PDFPage): void {
+    const link = out.context.register(
+        out.context.obj({
+            Type: "Annot",
+            Subtype: "Link",
+            Rect: rect,
+            Border: [0, 0, 0],
+            Dest: [dest.ref, "Fit"],
+        }),
+    );
+    let annots = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
+    if (!annots) {
+        annots = out.context.obj([]);
+        page.node.set(PDFName.of("Annots"), annots);
+    }
+    annots.push(link);
+}
+
+/**
+ * Une PDFs en uno solo, con un índice clickeable al principio: cada entrada abre la página
+ * donde empieza ese material, y cada página de contenido tiene arriba un enlace "Volver al
+ * índice" (en una franja agregada, sin tapar nada). El que no se puede abrir (roto o con
+ * clave) se salta y queda en `skipped`: pdf-lib no desencripta, así que un PDF con clave
+ * entraría con páginas rotas. El índice se arma al final, cuando se sabe qué archivos
+ * entraron, y se inserta al frente.
  */
 export async function mergePdfs(
     files: MergeInput[],
@@ -57,7 +87,7 @@ export async function mergePdfs(
             skipped.push({ index, title: file.title, reason: "tiene clave" });
             continue;
         }
-        let pages;
+        let pages: PDFPage[];
         try {
             pages = await out.copyPages(src, src.getPageIndices());
         } catch {
@@ -78,19 +108,24 @@ export async function mergePdfs(
 
     const indexPages = Math.ceil(merged.length / INDEX_ROWS_PER_PAGE);
     const withStart = merged.map((m, i) => ({ ...m, startPage: contentStarts[i] + indexPages }));
-    await writeIndex(out, withStart, indexPages);
+    const font = await out.embedFont(StandardFonts.Helvetica);
+    await writeIndex(out, withStart, indexPages, font);
+    addBackLinks(out, indexPages, font);
 
     const bytes = await out.save();
     return { bytes, pages: out.getPageCount(), merged: withStart, skipped };
 }
 
-/** Escribe las páginas del índice y las inserta al frente, en orden. */
-async function writeIndex(out: PDFDocument, merged: MergedFile[], indexPages: number): Promise<void> {
-    const font = await out.embedFont(StandardFonts.Helvetica);
+/** Escribe las páginas del índice y las inserta al frente, con cada renglón enlazado a su material. */
+async function writeIndex(out: PDFDocument, merged: MergedFile[], indexPages: number, font: PDFFont): Promise<void> {
     const bold = await out.embedFont(StandardFonts.HelveticaBold);
     const pageSize: [number, number] = [595, 842]; // A4
     const margin = 50;
     const lineHeight = 16;
+
+    // Las anotaciones se agregan después de insertar TODAS las páginas del índice: recién ahí
+    // las páginas de contenido quedan en su posición final y se las puede apuntar por índice.
+    const pendingLinks: { page: PDFPage; rect: [number, number, number, number]; startPage: number }[] = [];
 
     for (let n = 0; n < indexPages; n++) {
         const page = out.insertPage(n, pageSize);
@@ -108,8 +143,42 @@ async function writeIndex(out: PDFDocument, merged: MergedFile[], indexPages: nu
                 size: 11,
                 font,
             });
+            pendingLinks.push({ page, rect: [margin, y - 4, pageSize[0] - margin, y + 11], startPage: row.startPage });
             y -= lineHeight;
         }
+    }
+
+    for (const { page, rect, startPage } of pendingLinks) {
+        addPageLink(out, page, rect, out.getPage(startPage - 1));
+    }
+}
+
+/**
+ * Agrega a cada página de contenido una franja vacía arriba con "Volver al índice" enlazado
+ * a la primera página del índice. La franja AGRANDA la página (media y crop box): el material
+ * original queda intacto y el enlace nunca lo tapa. En una página rotada la franja queda de
+ * costado y el texto acostado; el enlace funciona igual.
+ */
+function addBackLinks(out: PDFDocument, indexPages: number, font: PDFFont): void {
+    const firstIndexPage = out.getPage(0);
+    const size = 9;
+    const color = rgb(0.1, 0.3, 0.7);
+    const textWidth = font.widthOfTextAtSize(BACK_LABEL, size);
+    const total = out.getPageCount();
+    for (let i = indexPages; i < total; i++) {
+        const page = out.getPage(i);
+        // Los dos box se leen ANTES de escribir: sin CropBox propio, getCropBox devuelve el
+        // MediaBox, y leerlo después de agrandarlo agrandaría el CropBox dos veces.
+        const media = page.getMediaBox();
+        const crop = page.getCropBox();
+        page.setMediaBox(media.x, media.y, media.width, media.height + BACK_STRIP);
+        page.setCropBox(crop.x, crop.y, crop.width, crop.height + BACK_STRIP);
+        const oldTop = media.y + media.height;
+        const x = media.x + media.width - 30 - textWidth;
+        const y = oldTop + 5;
+        page.drawText(BACK_LABEL, { x, y, size, font, color });
+        page.drawLine({ start: { x, y: y - 1.5 }, end: { x: x + textWidth, y: y - 1.5 }, thickness: 0.5, color });
+        addPageLink(out, page, [x - 3, oldTop, x + textWidth + 3, oldTop + BACK_STRIP], firstIndexPage);
     }
 }
 
