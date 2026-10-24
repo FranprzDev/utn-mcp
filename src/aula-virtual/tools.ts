@@ -184,6 +184,9 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "clasificación semántica ni garantía: lo dudoso, escaneado o ilegible queda adentro " +
                     "y todo lo omitido sale listado con el motivo. Es un compilado, no un resumen: el " +
                     "contenido queda íntegro.\n\n" +
+                    "Por memoria hay topes por pack (150 archivos y 300 MB, configurables con las " +
+                    "variables UTN_MCP_PACK_MAX_FILES y UTN_MCP_PACK_MAX_MB): lo que queda afuera por un " +
+                    "tope también sale listado, para pedir el resto en otro pack.\n\n" +
                     "La `direccion` del curso sale de aula_list_courses. El PDF queda guardado en la " +
                     "compu del usuario: la respuesta trae la ruta en `archivo`, lo que incluyó " +
                     "(`materiales`, con su sección, su módulo y la página en que empieza cada uno) y " +

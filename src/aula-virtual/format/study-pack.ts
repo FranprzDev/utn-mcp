@@ -10,6 +10,14 @@ import type { AulaSession } from "../client/session.js";
 import { parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
 
+/**
+ * Topes del pack. Todo el material convive en memoria al unir, así que sin tope total un curso
+ * enorme podría colgar la compu donde corre el servidor. Lo que queda afuera por un tope se
+ * lista en `omitidos` con el motivo, para pedir el resto en otro pack.
+ */
+const MAX_PACK_FILES = Number(process.env.UTN_MCP_PACK_MAX_FILES ?? 150);
+const MAX_PACK_BYTES = Number(process.env.UTN_MCP_PACK_MAX_MB ?? 300) * 1024 * 1024;
+
 const isPdf = (e: CourseFileEntry) =>
     e.file.mimetype === "application/pdf" || e.file.filename.toLowerCase().endsWith(".pdf");
 
@@ -76,8 +84,17 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, i
     const inputs: { title: string; bytes: Uint8Array }[] = [];
     const kept: CourseFileEntry[] = [];
     const seen = new Map<string, string>(); // hash -> nombre del primero con ese contenido
+    let totalBytes = 0;
     for (const entry of pdfs) {
         const name = entry.file.filename;
+        if (inputs.length >= MAX_PACK_FILES || totalBytes + (entry.file.filesize ?? 0) > MAX_PACK_BYTES) {
+            omitted.push({
+                nombre: name,
+                seccion: entry.section,
+                motivo: `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`,
+            });
+            continue;
+        }
         let bytes: Uint8Array;
         try {
             ({ bytes } = await fetchFile(session, downloadUrl(baseUrl, entry.file.fileurl), MAX_BYTES));
@@ -98,6 +115,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, i
         }
         inputs.push({ title: name, bytes });
         kept.push(entry);
+        totalBytes += bytes.length;
     }
 
     const courseName = course?.shortname ?? `curso-${address.courseId}`;
