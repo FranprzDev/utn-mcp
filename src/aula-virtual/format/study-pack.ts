@@ -11,13 +11,20 @@ import { parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
 
 /**
- * Topes de tamaño por pack: pdf-lib junta todo el resultado en memoria y Moodle no muestra el
- * tamaño real hasta bajar el archivo, así que el control es sobre el total de los PDF anunciados.
- * Lo que queda afuera por un tope también queda listado en `omitidos` con el motivo, para pedir
- * el resto en otro pack.
+ * Topes de tamaño por pack: pdf-lib junta todo el resultado en memoria, así que sin tope total un
+ * curso enorme podría colgar la compu donde corre el servidor. Lo que queda afuera por un tope se
+ * lista en `omitidos` con el motivo, para pedir el resto en otro pack.
+ * Una variable de entorno con basura NO puede desactivar el tope: si no es un número válido,
+ * vuelve al default.
  */
-const MAX_PACK_FILES = Number(process.env.UTN_MCP_PACK_MAX_FILES ?? 150);
-const MAX_PACK_BYTES = Number(process.env.UTN_MCP_PACK_MAX_MB ?? 300) * 1024 * 1024;
+const capFromEnv = (raw: string | undefined, fallback: number): number => {
+    const n = Number(raw ?? fallback);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const MAX_PACK_FILES = capFromEnv(process.env.UTN_MCP_PACK_MAX_FILES, 150);
+const MAX_PACK_BYTES = capFromEnv(process.env.UTN_MCP_PACK_MAX_MB, 300) * 1024 * 1024;
+/** El PDF final no debería pasar de 30 MB: si pasa, se genera igual pero queda avisado. */
+const MAX_FINAL_BYTES = 30 * 1024 * 1024;
 
 const isPdf = (e: CourseFileEntry) =>
     e.file.mimetype === "application/pdf" || e.file.filename.toLowerCase().endsWith(".pdf");
@@ -123,15 +130,24 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             omitted.push({ nombre: name, seccion: entry.section, motivo: (e as Error).message });
             continue;
         }
+        // Excluir es por NOMBRE: si otra copia del mismo contenido tiene otro nombre, entra igual.
+        if (forceExclude.includes(name)) {
+            omitted.push({ nombre: name, seccion: entry.section, motivo: "excluido a pedido" });
+            continue;
+        }
         const hash = createHash("sha256").update(bytes).digest("hex");
         const original = seen.get(hash);
         if (original) {
             omitted.push({ nombre: name, seccion: entry.section, motivo: `es idéntico a "${original}"` });
             continue;
         }
-        seen.set(hash, name);
-        if (forceExclude.includes(name)) {
-            omitted.push({ nombre: name, seccion: entry.section, motivo: "excluido a pedido" });
+        // El tamaño real se conoce recién ahora (Moodle a veces no lo anuncia): tope post-descarga.
+        if (totalBytes + bytes.length > MAX_PACK_BYTES) {
+            omitted.push({
+                nombre: name,
+                seccion: entry.section,
+                motivo: `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`,
+            });
             continue;
         }
         if (!includeAll && !forceInclude.includes(name)) {
@@ -145,6 +161,8 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
                 continue;
             }
         }
+        // El hash se registra solo para lo que ENTRA: un excluido no puede volver "duplicados" a los demás.
+        seen.set(hash, name);
         inputs.push({ title: name, bytes });
         kept.push(entry);
         totalBytes += bytes.length;
@@ -178,8 +196,19 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
 
     const dir = exportsDir();
     await mkdir(dir, { recursive: true });
-    const path = join(dir, `${safeFileName(courseName)}-apuntes.pdf`);
+    // Nombre con fecha-hora: regenerar el pack de una materia nunca pisa el PDF anterior.
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const path = join(dir, `${safeFileName(courseName)}-apuntes-${stamp}.pdf`);
     await writeFile(path, bytes);
+
+    if (bytes.length > MAX_FINAL_BYTES) {
+        const mb = Math.round((bytes.length / 1024 / 1024) * 10) / 10;
+        avisos.push(
+            `el PDF final pesa ${mb} MB, más del máximo recomendado (30 MB): se generó igual, pero puede ser incómodo de abrir o compartir`,
+        );
+    }
 
     return {
         archivo: path,
