@@ -178,10 +178,12 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "de todas las secciones del curso, los baja y los une en un solo archivo con un " +
                     "índice al principio que dice en qué página empieza cada uno.\n\n" +
                     "Por defecto deja afuera el material administrativo (cronogramas, programas " +
-                    "analíticos, bibliografías, formatos de entrega, detectado por el contenido de la " +
-                    "primera página) y los duplicados exactos, porque el PDF es para estudiar; con " +
-                    "`incluir_administrativo` en true une absolutamente todo. Es un compilado, no un " +
-                    "resumen: el contenido queda íntegro.\n\n" +
+                    "analíticos, bibliografías, formatos de entrega, detectado por palabras clave en " +
+                    "el texto de la primera página) y los duplicados exactos, porque el PDF es para " +
+                    "estudiar; con `incluir_administrativo` en true une absolutamente todo. No es una " +
+                    "clasificación semántica ni garantía: lo dudoso, escaneado o ilegible queda adentro " +
+                    "y todo lo omitido sale listado con el motivo. Es un compilado, no un resumen: el " +
+                    "contenido queda íntegro.\n\n" +
                     "La `direccion` del curso sale de aula_list_courses. El PDF queda guardado en la " +
                     "compu del usuario: la respuesta trae la ruta en `archivo`, lo que incluyó " +
                     "(`materiales`, con su sección, su módulo y la página en que empieza cada uno) y " +
