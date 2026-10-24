@@ -179,11 +179,18 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "índice al principio que dice en qué página empieza cada uno.\n\n" +
                     "Por defecto deja afuera el material administrativo (cronogramas, programas " +
                     "analíticos, bibliografías, formatos de entrega, detectado por palabras clave en " +
-                    "el texto de la primera página) y los duplicados exactos, porque el PDF es para " +
-                    "estudiar; con `incluir_administrativo` en true une absolutamente todo. No es una " +
-                    "clasificación semántica ni garantía: lo dudoso, escaneado o ilegible queda adentro " +
-                    "y todo lo omitido sale listado con el motivo. Es un compilado, no un resumen: el " +
-                    "contenido queda íntegro.\n\n" +
+                    "el texto de las primeras dos páginas) y los duplicados exactos, porque el PDF es " +
+                    "para estudiar; con `incluir_administrativo` en true une absolutamente todo. No es " +
+                    "una clasificación semántica ni garantía: lo dudoso, escaneado o ilegible queda " +
+                    "adentro y todo lo omitido sale listado con el motivo (y la coincidencia que lo " +
+                    "descartó, si fue por el filtro). Es un compilado, no un resumen: el contenido " +
+                    "queda íntegro.\n\n" +
+                    "Para revisar la lista antes de unir: `solo_listar` en true baja y clasifica todo " +
+                    "pero no genera el archivo, y devuelve `incluiria` y `omitidos` con motivos. " +
+                    "Después se llama de nuevo con `incluir` (nombres de archivo a incluir aunque " +
+                    "parezcan administrativos) o `excluir` (nombres a dejar afuera); un nombre que no " +
+                    "existe en el curso sale avisado en `avisos`. Los PDF se bajan de a uno, dos veces " +
+                    "si se revisa primero.\n\n" +
                     "Por memoria hay topes por pack (150 archivos y 300 MB, configurables con las " +
                     "variables UTN_MCP_PACK_MAX_FILES y UTN_MCP_PACK_MAX_MB): lo que queda afuera por un " +
                     "tope también sale listado, para pedir el resto en otro pack.\n\n" +
@@ -204,12 +211,41 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                             "Si es true, une TODOS los PDF del curso, incluido el material administrativo. " +
                                 "Por defecto ese material queda afuera.",
                         ),
+                    solo_listar: z
+                        .boolean()
+                        .optional()
+                        .describe(
+                            "Si es true, no une ni guarda nada: baja los PDF, los clasifica y devuelve la " +
+                                "propuesta (`incluiria` y `omitidos` con motivos) para revisarla antes. " +
+                                "Los PDF se vuelven a bajar en la llamada siguiente.",
+                        ),
+                    incluir: z
+                        .array(z.string())
+                        .optional()
+                        .describe(
+                            "Nombres de archivo exactos a incluir aunque el filtro los descarte como " +
+                                "administrativos. Útil después de revisar la propuesta de `solo_listar`.",
+                        ),
+                    excluir: z
+                        .array(z.string())
+                        .optional()
+                        .describe(
+                            "Nombres de archivo exactos a dejar afuera a pedido, aunque el filtro los " +
+                                "conserve. Útil después de revisar la propuesta de `solo_listar`.",
+                        ),
                 }),
                 annotations: READ_ONLY,
             },
-            async ({ direccion, incluir_administrativo }) => {
+            async ({ direccion, incluir_administrativo, solo_listar, incluir, excluir }) => {
                 try {
-                    return json(await buildStudyPack(session, direccion, incluir_administrativo));
+                    return json(
+                        await buildStudyPack(session, direccion, {
+                            includeAll: incluir_administrativo,
+                            dryRun: solo_listar,
+                            forceInclude: incluir,
+                            forceExclude: excluir,
+                        }),
+                    );
                 } catch (e) {
                     return failure(e);
                 }
