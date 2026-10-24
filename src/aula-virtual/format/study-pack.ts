@@ -129,6 +129,8 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
         throw new Error("El curso no tiene ningún PDF en sus secciones visibles.");
     }
 
+    /** Motivo común cuando un PDF queda afuera por los topes del pack (antes o después de bajarlo). */
+    const capMotivo = `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`;
     const inputs: { title: string; bytes: Uint8Array }[] = [];
     const kept: CourseFileEntry[] = [];
     const seen = new Map<string, string>(); // hash -> nombre del primero con ese contenido
@@ -139,7 +141,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             omitted.push({
                 nombre: name,
                 seccion: entry.section,
-                motivo: `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`,
+                motivo: capMotivo,
             });
             continue;
         }
@@ -166,7 +168,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             omitted.push({
                 nombre: name,
                 seccion: entry.section,
-                motivo: `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`,
+                motivo: capMotivo,
             });
             continue;
         }
