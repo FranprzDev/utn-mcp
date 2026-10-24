@@ -17,7 +17,7 @@ import { downloadUrl, MAX_BYTES } from "./files.js";
  * Una variable de entorno con basura NO puede desactivar el tope: si no es un número válido,
  * vuelve al default.
  */
-const capFromEnv = (raw: string | undefined, fallback: number): number => {
+export const capFromEnv = (raw: string | undefined, fallback: number): number => {
     const n = Number(raw ?? fallback);
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
@@ -46,7 +46,7 @@ const ADMIN_SCAN_PAGES = 2;
  * logo no tapa el contenido). Un PDF escaneado o que no se puede leer NO se descarta: mejor
  * incluir uno de más que tirar material de estudio.
  */
-async function adminPattern(bytes: Uint8Array, filename: string): Promise<string | null> {
+export async function adminPattern(bytes: Uint8Array, filename: string): Promise<string | null> {
     try {
         // pdf.js toma posesión del buffer (lo transfiere a su worker): hay que pasarle una copia
         // o los bytes originales quedan inutilizables para el merge que viene después.
