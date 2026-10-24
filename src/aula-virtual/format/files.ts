@@ -10,7 +10,7 @@ const BUDGET_CHARS = 30_000;
 /** Lo que cuesta una página como imagen (~1.600 tokens), medido en caracteres de texto. */
 const IMAGE_COST_CHARS = 6_000;
 /** El más grande que hay hoy en los cursos pesa 12 MB. */
-const MAX_BYTES = 30 * 1024 * 1024;
+export const MAX_BYTES = 30 * 1024 * 1024;
 
 /**
  * Moodle devuelve las URLs del web service, que piden token. Al usuario le sirve la misma ruta sin
@@ -35,7 +35,7 @@ export function userFacingUrl(fileurl: string): string {
  * Acepta cualquiera de las dos formas y devuelve la del web service. Solo archivos del aula del
  * usuario (`baseUrl`): con cualquier otra URL estaríamos mandando su token a donde diga el modelo.
  */
-function downloadUrl(baseUrl: string, url: string): URL {
+export function downloadUrl(baseUrl: string, url: string): URL {
     let u: URL;
     try {
         u = new URL(url);

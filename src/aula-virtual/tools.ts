@@ -13,6 +13,7 @@ import {
 } from "./format/actions.js";
 import { ROOT } from "./format/address.js";
 import { readAulaFile } from "./format/files.js";
+import { buildStudyPack } from "./format/study-pack.js";
 import { open } from "./format/navigate.js";
 import { createUploadLink, submitAssignment } from "./format/submission.js";
 
@@ -165,6 +166,38 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
             }
         },
     );
+
+    // El pack se guarda en el disco: solo en STDIO, donde el servidor corre en la compu del usuario.
+    if (files.local) {
+        server.registerTool(
+            "aula_study_pack",
+            {
+                description:
+                    "Arma un único PDF con todo el material de una materia para estudiar: busca los PDF " +
+                    "de todas las secciones del curso, los baja y los une en un solo archivo con un " +
+                    "índice al principio que dice en qué página empieza cada uno.\n\n" +
+                    "La `direccion` del curso sale de aula_list_courses. El PDF queda guardado en la " +
+                    "compu del usuario: la respuesta trae la ruta en `archivo`, lo que incluyó " +
+                    "(`materiales`, con su sección, su módulo y la página en que empieza cada uno) y " +
+                    "lo que no se pudo incluir (`omitidos`, con el motivo). Los archivos que no son " +
+                    "PDF no entran: para leerlos o pasarle su link al usuario, usá aula_open y " +
+                    "aula_read_file.",
+                inputSchema: z.object({
+                    direccion: z
+                        .string()
+                        .describe('Dirección del curso, de aula_list_courses. Ej: "/curso/691".'),
+                }),
+                annotations: READ_ONLY,
+            },
+            async ({ direccion }) => {
+                try {
+                    return json(await buildStudyPack(session, direccion));
+                } catch (e) {
+                    return failure(e);
+                }
+            },
+        );
+    }
 
     // --- Escritura: lo que sigue cambia algo en el aula, y casi todo queda a la vista de otras personas. ---
 
