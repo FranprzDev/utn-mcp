@@ -133,7 +133,7 @@ export async function writePackFile(dir: string, courseName: string, bytes: Uint
     const pad = (n: number) => String(n).padStart(2, "0");
     const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const base = join(dir, `${safeFileName(courseName)}-apuntes-${stamp}`);
-    for (let n = 1; ; n++) {
+    for (let n = 1; n <= 100; n++) {
         const candidate = n === 1 ? `${base}.pdf` : `${base}-${n}.pdf`;
         try {
             await writeFile(candidate, bytes, { flag: "wx" });
@@ -142,6 +142,7 @@ export async function writePackFile(dir: string, courseName: string, bytes: Uint
             if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
         }
     }
+    throw new Error(`No se pudo guardar el pack: ya existen 100 archivos para "${base}".`);
 }
 
 export async function buildStudyPack(session: AulaSession, rawAddress: string, options: StudyPackOptions = {}) {
