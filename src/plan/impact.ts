@@ -45,11 +45,11 @@ function collectChain(seeds: readonly PlanSubject[], subjects: readonly PlanSubj
 /** Qué deja de poder cursar quien pierde la regularidad de `root`, en el grafo de correlativas del plan. */
 export function computeRegularityLossImpact(root: PlanSubject, subjects: readonly PlanSubject[]): RegularityLossImpact {
     const others = subjects.filter((s) => s.number !== root.number);
-    const direct = others.filter((s) => s.regularToTake.includes(root.number)).sort(byLevelAndNumber);
-    const approvalOnly = others
-        .filter((s) => s.approvedToTake.includes(root.number) && !s.regularToTake.includes(root.number))
-        .sort(byLevelAndNumber);
-    const chain = collectChain(direct, others);
+    const approvalOnly = others.filter((s) => s.approvedToTake.includes(root.number)).sort(byLevelAndNumber);
+    const blockedAnyway = new Set(approvalOnly.map((s) => s.number));
+    const reachable = others.filter((s) => !blockedAnyway.has(s.number));
+    const direct = reachable.filter((s) => s.regularToTake.includes(root.number)).sort(byLevelAndNumber);
+    const chain = collectChain(direct, reachable);
     const finals = others.filter((s) => s.approvedToSit.includes(root.number)).sort(byLevelAndNumber);
     return {
         materia: { nombre: root.name, nivel: root.level },
