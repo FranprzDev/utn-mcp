@@ -13,6 +13,7 @@ import {
 } from "./format/actions.js";
 import { ROOT } from "./format/address.js";
 import { readAulaFile } from "./format/files.js";
+import { buildStudyPack } from "./format/study-pack.js";
 import { open } from "./format/navigate.js";
 import { createUploadLink, submitAssignment } from "./format/submission.js";
 
@@ -165,6 +166,95 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
             }
         },
     );
+
+    if (files.local) {
+        server.registerTool(
+            "aula_study_pack",
+            {
+                description:
+                    "Arma un único PDF con el material de estudio de una materia (el usuario le puede " +
+                    "decir compilado de estudio, apuntes unidos, 'machacado' o 'titán'): busca los PDF " +
+                    "de todas las secciones del curso, los baja y los une en un solo archivo con un " +
+                    "índice clickeable al principio: cada entrada abre la página donde empieza " +
+                    "ese material, y cada página tiene arriba un enlace \"Volver al índice\" (en " +
+                    "una franja agregada, sin tapar el contenido).\n\n" +
+                    "Por defecto deja afuera el material administrativo (cronogramas, programas " +
+                    "analíticos, bibliografías, formatos de entrega, detectado por palabras clave en " +
+                    "el texto de las primeras dos páginas) y los duplicados exactos, porque el PDF es " +
+                    "para estudiar; con `incluir_administrativo` en true une absolutamente todo. No es " +
+                    "una clasificación semántica ni garantía: lo dudoso, escaneado o ilegible queda " +
+                    "adentro y todo lo omitido sale listado con el motivo (y la coincidencia que lo " +
+                    "descartó, si fue por el filtro). Es un compilado, no un resumen: el contenido " +
+                    "queda íntegro.\n\n" +
+                    "Para revisar la lista antes de unir: `solo_listar` en true baja y clasifica todo " +
+                    "pero no genera el archivo, y devuelve `incluiria` y `omitidos` con motivos. " +
+                    "Después se llama de nuevo con `incluir` (nombres de archivo a incluir aunque " +
+                    "parezcan administrativos) o `excluir` (nombres a dejar afuera); un nombre que no " +
+                    "existe en el curso sale avisado en `avisos`. Máximo del PDF final: 30 MB; si lo supera NO " +
+                    "se guarda y el error dice el peso y las opciones (excluir archivos o subir el " +
+                    "tope con UTN_MCP_PACK_MAX_FINAL_MB si el usuario lo decide). Los PDF se bajan " +
+                    "de a uno, dos veces si se revisa primero.\n\n" +
+                    "Por memoria hay topes por pack (150 archivos y 300 MB, configurables con las " +
+                    "variables UTN_MCP_PACK_MAX_FILES y UTN_MCP_PACK_MAX_MB): lo que queda afuera por un " +
+                    "tope también sale listado, para pedir el resto en otro pack.\n\n" +
+                    "La `direccion` del curso sale de aula_list_courses. El PDF queda guardado en la " +
+                    "compu del usuario: la respuesta trae la ruta en `archivo`, lo que incluyó " +
+                    "(`materiales`, con su sección, su módulo y la página en que empieza cada uno) y " +
+                    "lo que no entró (`omitidos`, con el motivo). Los archivos que no son PDF no " +
+                    "entran: para leerlos o pasarle su link al usuario, usá aula_open y " +
+                    "aula_read_file.",
+                inputSchema: z.object({
+                    direccion: z
+                        .string()
+                        .describe('Dirección del curso, de aula_list_courses. Ej: "/curso/691".'),
+                    incluir_administrativo: z
+                        .boolean()
+                        .optional()
+                        .describe(
+                            "Si es true, une TODOS los PDF del curso, incluido el material administrativo. " +
+                                "Por defecto ese material queda afuera.",
+                        ),
+                    solo_listar: z
+                        .boolean()
+                        .optional()
+                        .describe(
+                            "Si es true, no une ni guarda nada: baja los PDF, los clasifica y devuelve la " +
+                                "propuesta (`incluiria` y `omitidos` con motivos) para revisarla antes. " +
+                                "Los PDF se vuelven a bajar en la llamada siguiente.",
+                        ),
+                    incluir: z
+                        .array(z.string())
+                        .optional()
+                        .describe(
+                            "Nombres de archivo exactos a incluir aunque el filtro los descarte como " +
+                                "administrativos. Útil después de revisar la propuesta de `solo_listar`.",
+                        ),
+                    excluir: z
+                        .array(z.string())
+                        .optional()
+                        .describe(
+                            "Nombres de archivo exactos a dejar afuera a pedido, aunque el filtro los " +
+                                "conserve. Útil después de revisar la propuesta de `solo_listar`.",
+                        ),
+                }),
+                annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+            },
+            async ({ direccion, incluir_administrativo, solo_listar, incluir, excluir }) => {
+                try {
+                    return json(
+                        await buildStudyPack(session, direccion, {
+                            includeAll: incluir_administrativo,
+                            dryRun: solo_listar,
+                            forceInclude: incluir,
+                            forceExclude: excluir,
+                        }),
+                    );
+                } catch (e) {
+                    return failure(e);
+                }
+            },
+        );
+    }
 
     // --- Escritura: lo que sigue cambia algo en el aula, y casi todo queda a la vista de otras personas. ---
 
