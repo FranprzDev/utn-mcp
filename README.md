@@ -29,8 +29,16 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_choice_answer` | Responde una elección o te anota en un grupo. |
 | `aula_send_message` | Manda un mensaje privado a un docente o compañero. |
 | `aula_calendar_add_event` | Agrega un recordatorio a tu calendario del aula. |
+| `plan_get_profile` | Lee la carrera y el plan que tenés guardados en `profile.md`. Solo en modo local. |
+| `plan_set_profile` | Guarda tu carrera y tu plan en `profile.md` (también lo podés editar a mano). Solo en modo local. |
+| `plan_recursar_impacto` | Te dice qué materias dejás de poder cursar si recursás una (perdés la regularidad): las que se cortan directo, las que se afectan después por la cadena de correlativas y los finales que exigen la materia aprobada, ordenado por nivel. Por ahora Ingeniería en Sistemas de Información, planes 2008 y 2023. |
 
 Al abrir una tarea, `aula_open` muestra si la entregaste, cuándo vence y la devolución con la nota. Las tools que escriben le piden al agente que te muestre lo que va a hacer y espere tu confirmación.
+
+### Plan de estudios y correlativas
+`plan_recursar_impacto` calcula con las correlativas del plan, sin que el modelo las invente. Entiende el nombre como lo escribas ("diseño de sistemas", "estructura de datos"); si hay más de una materia posible te pregunta cuál. El plan sale de `profile.md` (en la carpeta de configuración, `~/.config/utn-mcp` en Linux y macOS) o del parámetro `plan`; si te cambiás de plan, se actualiza el perfil antes de calcular. En modo HTTP todavía no hay perfil por usuario, así que el plan se pasa en cada consulta.
+
+No usa tu historial de materias: responde qué materias dependen de la que recursás, sin saber cuáles ya cursaste. Tampoco calcula las condiciones del tipo "todas las materias previas" de Proyecto Final ni otras reglas que la respuesta lista en `noCalculado`. Los datos de Sistemas 2008 y 2023 se generan desde [AdHorarium](https://github.com/FranprzDev/AdHorarium) (`pnpm export:catalog <archivo>`) y se copian a `src/plan/data.ts`, que indica el commit de origen.
 
 ### Archivos que puede leer
 - **PDF**: el texto, página por página. Los **escaneados** se mandan como imagen de cada página, y el agente los lee igual.
