@@ -1,8 +1,15 @@
 import type { AulaSession } from "../client/session.js";
 import { MoodleError } from "../client/moodle-api.js";
 
+/** Errores de token del aula que se resuelven renovándolo una vez (los mismos que maneja moodle-api). */
 const TOKEN_ERRORS = new Set(["invalidtoken", "expiredtoken"]);
 
+/**
+ * Baja un archivo del curso para el pack, con el token; lo renueva una vez si venció.
+ * La descarga es propia del pack (no usa fetchFile, compartido con otras tools, que no se
+ * toca): los redirects se siguen a mano y SOLO al propio aula y a rutas de archivos
+ * (pluginfile). Un pluginfile legítimo no redirige afuera; cualquier otro destino se rechaza.
+ */
 export async function fetchPackFile(session: AulaSession, url: URL, maxBytes: number): Promise<Uint8Array> {
     let token = await session.getToken();
     const { baseUrl } = await session.getRegional();

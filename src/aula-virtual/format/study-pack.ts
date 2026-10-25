@@ -10,26 +10,43 @@ import { fetchPackFile } from "./pack-download.js";
 import { AddressLevel, parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
 
+/**
+ * Topes de tamaño por pack: pdf-lib junta todo el resultado en memoria, así que sin tope total un
+ * curso enorme podría colgar la compu donde corre el servidor. Lo que queda afuera por un tope se
+ * lista en `omitidos` con el motivo, para pedir el resto en otro pack.
+ * Una variable de entorno con basura NO puede desactivar el tope: si no es un número válido,
+ * vuelve al default.
+ */
 const capFromEnv = (raw: string | undefined, fallback: number): number => {
     const n = Number(raw ?? fallback);
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 const MAX_PACK_FILES = capFromEnv(process.env.UTN_MCP_PACK_MAX_FILES, 150);
 const MAX_PACK_BYTES = capFromEnv(process.env.UTN_MCP_PACK_MAX_MB, 300) * 1024 * 1024;
+/** Máximo del PDF final: si lo supera NO se guarda; se informa el peso y las opciones. */
 const MAX_FINAL_MB = capFromEnv(process.env.UTN_MCP_PACK_MAX_FINAL_MB, 30);
 
 const isPdf = (e: CourseFileEntry) =>
     e.file.mimetype === "application/pdf" || e.file.filename.toLowerCase().endsWith(".pdf");
 
+/** Los caracteres que no sirven para un nombre de archivo se cambian por "-". */
 const safeFileName = (name: string) => name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "");
 
 export interface StudyPackOptions {
+    /** Une absolutamente todo, incluido el material administrativo. */
     includeAll?: boolean;
+    /** No une ni escribe nada: devuelve la propuesta de qué incluiría y qué omitiría. */
     dryRun?: boolean;
+    /** Nombres de archivo a incluir aunque parezcan administrativos. */
     forceInclude?: string[];
+    /** Nombres de archivo a dejar afuera a pedido. */
     forceExclude?: string[];
 }
 
+/**
+ * Escribe el pack sin pisar packs anteriores: nombre con fecha-hora y, si ya existe (dos packs
+ * en el mismo segundo), un sufijo -2, -3... La escritura es atómica por nombre (bandera "wx").
+ */
 export async function writePackFile(dir: string, courseName: string, bytes: Uint8Array): Promise<string> {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -47,6 +64,14 @@ export async function writePackFile(dir: string, courseName: string, bytes: Uint
     throw new Error(`No se pudo guardar el pack: ya existen 100 archivos para "${base}".`);
 }
 
+/**
+ * Baja los PDF de un curso y los une en un solo archivo con índice, guardado en exportsDir().
+ * Por defecto deja afuera el material administrativo (cronogramas, programas, formatos de
+ * entrega, bibliografías) y los duplicados exactos: el compilado es para estudiar.
+ * Todo lo omitido queda listado en `omitidos` con el motivo (y la coincidencia, si fue por
+ * clasificación). Con `dryRun` no genera el archivo: devuelve la propuesta para revisarla
+ * antes, ajustable con `forceInclude` / `forceExclude` por nombre de archivo.
+ */
 export async function buildStudyPack(session: AulaSession, rawAddress: string, options: StudyPackOptions = {}) {
     const { includeAll = false, dryRun = false, forceInclude = [], forceExclude = [] } = options;
     const address = parseAddress(rawAddress);
@@ -68,10 +93,11 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
         throw new Error("El curso no tiene ningún PDF en sus secciones visibles.");
     }
 
+    /** Motivo común cuando un PDF queda afuera por los topes del pack (antes o después de bajarlo). */
     const capMotivo = `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`;
     const inputs: { title: string; bytes: Uint8Array }[] = [];
     const kept: CourseFileEntry[] = [];
-    const seen = new Map<string, string>();
+    const seen = new Map<string, string>(); // hash -> nombre del primero con ese contenido
     let totalBytes = 0;
     for (const entry of pdfs) {
         const name = entry.file.filename;
@@ -90,6 +116,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             omitted.push({ nombre: name, seccion: entry.section, motivo: (e as Error).message });
             continue;
         }
+        // Excluir es por NOMBRE: si otra copia del mismo contenido tiene otro nombre, entra igual.
         if (forceExclude.includes(name)) {
             omitted.push({ nombre: name, seccion: entry.section, motivo: "excluido a pedido" });
             continue;
@@ -100,6 +127,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             omitted.push({ nombre: name, seccion: entry.section, motivo: `es idéntico a "${original}"` });
             continue;
         }
+        // El tamaño real se conoce recién ahora (Moodle a veces no lo anuncia): tope post-descarga.
         if (totalBytes + bytes.length > MAX_PACK_BYTES) {
             omitted.push({
                 nombre: name,
@@ -119,6 +147,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
                 continue;
             }
         }
+        // El hash se registra solo para lo que ENTRA: un excluido no puede volver "duplicados" a los demás.
         seen.set(hash, name);
         inputs.push({ title: name, bytes });
         kept.push(entry);
@@ -127,6 +156,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
 
     const courseName = course?.shortname ?? `curso-${address.courseId}`;
 
+    // Aviso por nombres pedidos que no existen en el curso: un typo no tiene que pasar en silencio.
     const known = new Set(pdfs.map((e) => e.file.filename));
     const avisos = [...forceInclude, ...forceExclude]
         .filter((n) => !known.has(n))
