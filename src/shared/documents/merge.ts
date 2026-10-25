@@ -99,32 +99,26 @@ async function writeIndex(out: PDFDocument, merged: MergedFile[], indexPages: nu
     const margin = 50;
     const lineHeight = 16;
 
-    const pendingLinks: { page: PDFPage; rect: [number, number, number, number]; startPage: number }[] = [];
-
+    const pages: PDFPage[] = [];
     for (let n = 0; n < indexPages; n++) {
         const page = out.insertPage(n, pageSize);
-        let y = pageSize[1] - margin;
-        page.drawText(winAnsi("Índice"), { x: margin, y, size: 16, font: bold });
-        y -= lineHeight * 2;
-
-        const rows = merged.slice(n * INDEX_ROWS_PER_PAGE, (n + 1) * INDEX_ROWS_PER_PAGE);
-        for (const row of rows) {
-            const pageNo = String(row.startPage);
-            page.drawText(pageNo, { x: margin + 30 - font.widthOfTextAtSize(pageNo, 11), y, size: 11, font });
-            page.drawText(truncate(winAnsi(row.title), font, 11, pageSize[0] - margin * 2 - 40), {
-                x: margin + 40,
-                y,
-                size: 11,
-                font,
-            });
-            pendingLinks.push({ page, rect: [margin, y - 4, pageSize[0] - margin, y + 11], startPage: row.startPage });
-            y -= lineHeight;
-        }
+        page.drawText(winAnsi("Índice"), { x: margin, y: pageSize[1] - margin, size: 16, font: bold });
+        pages.push(page);
     }
 
-    for (const { page, rect, startPage } of pendingLinks) {
-        addPageLink(out, page, rect, out.getPage(startPage - 1));
-    }
+    merged.forEach((row, i) => {
+        const page = pages[Math.floor(i / INDEX_ROWS_PER_PAGE)];
+        const y = pageSize[1] - margin - lineHeight * (2 + (i % INDEX_ROWS_PER_PAGE));
+        const pageNo = String(row.startPage);
+        page.drawText(pageNo, { x: margin + 30 - font.widthOfTextAtSize(pageNo, 11), y, size: 11, font });
+        page.drawText(truncate(winAnsi(row.title), font, 11, pageSize[0] - margin * 2 - 40), {
+            x: margin + 40,
+            y,
+            size: 11,
+            font,
+        });
+        addPageLink(out, page, [margin, y - 4, pageSize[0] - margin, y + 11], out.getPage(row.startPage - 1));
+    });
 }
 
 function addBackLinks(out: PDFDocument, indexPages: number, font: PDFFont): void {
