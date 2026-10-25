@@ -167,7 +167,6 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
         },
     );
 
-    // El pack se guarda en el disco: solo en STDIO, donde el servidor corre en la compu del usuario.
     if (files.local) {
         server.registerTool(
             "aula_study_pack",
@@ -238,7 +237,6 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                                 "conserve. Útil después de revisar la propuesta de `solo_listar`.",
                         ),
                 }),
-                // No es READ_ONLY: no toca el aula, pero escribe un archivo en el disco del usuario.
                 annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
             },
             async ({ direccion, incluir_administrativo, solo_listar, incluir, excluir }) => {

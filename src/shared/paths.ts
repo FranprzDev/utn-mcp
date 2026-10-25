@@ -19,7 +19,6 @@ export const storeFile = () => process.env.UTN_MCP_DB ?? join(configDir(), "utn-
 /** Clave con la que se cifran las sesiones en la base, si no viene en UTN_MCP_KEY. */
 export const storeKeyFile = () => join(configDir(), "store.key");
 
-/** Dónde quedan los archivos que arma el servidor (packs de estudio): UTN_MCP_EXPORTS o exports/ en la configuración. */
 export function exportsDir(): string {
     return process.env.UTN_MCP_EXPORTS ?? join(configDir(), "exports");
 }

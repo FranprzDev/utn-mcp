@@ -47,17 +47,12 @@ export function getCourseSections(session: AulaSession, courseId: number, cmid?:
     return callWs<CourseSection[]>(session, "core_course_get_contents", params);
 }
 
-/** Un archivo de un curso, con dónde está: en qué sección y en qué módulo. */
 export interface CourseFileEntry {
     section: string;
     module: string;
     file: CourseModuleContent;
 }
 
-/**
- * Los archivos de las secciones y módulos visibles del curso, en el orden en que aparecen en el aula.
- * Los mismos filtros de visibilidad que el mapa del curso de format/navigate.
- */
 export async function getCourseFiles(session: AulaSession, courseId: number): Promise<CourseFileEntry[]> {
     const sections = await getCourseSections(session, courseId);
     const entries: CourseFileEntry[] = [];
