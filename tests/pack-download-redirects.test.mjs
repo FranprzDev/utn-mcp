@@ -1,5 +1,3 @@
-// Regresión: la descarga del pack solo sigue redirects al propio aula y a rutas de archivos (pluginfile).
-// Servidor local + sesión falsa: no toca el aula real ni necesita credenciales.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";

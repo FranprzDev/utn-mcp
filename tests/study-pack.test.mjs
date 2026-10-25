@@ -1,5 +1,3 @@
-// Regresiones del pack de estudio: filtro administrativo de dos páginas, topes por env y
-// nombres de salida que nunca se pisan.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
