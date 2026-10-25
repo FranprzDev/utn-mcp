@@ -53,7 +53,7 @@ export interface CourseFileEntry {
     file: CourseModuleContent;
 }
 
-export async function getCourseFiles(session: AulaSession, courseId: number): Promise<CourseFileEntry[]> {
+export async function getCourseFiles(session: AulaSession, courseId: number): Promise<ReadonlyArray<CourseFileEntry>> {
     const sections = await getCourseSections(session, courseId);
     const entries: CourseFileEntry[] = [];
     for (const section of sections) {
