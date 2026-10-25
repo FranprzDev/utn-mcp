@@ -13,6 +13,9 @@ export function configDir(): string {
 /** Token de Moodle del modo local. */
 export const sessionFile = () => join(configDir(), "session.json");
 
+/** Perfil del alumno del modo local (carrera y plan), un markdown que también se puede editar a mano. */
+export const profileFile = () => join(configDir(), "profile.md");
+
 /** Base de usuarios, tokens y sesiones del modo HTTP: UTN_MCP_DB o un SQLite en la carpeta de configuración. */
 export const storeFile = () => process.env.UTN_MCP_DB ?? join(configDir(), "utn-mcp.db");
 
