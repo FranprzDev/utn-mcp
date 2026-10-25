@@ -1,16 +1,26 @@
 import { timingSafeEqual } from "node:crypto";
-import express, { type Express, type RequestHandler } from "express";
-import { linkAulaAccount } from "../aula-virtual/client/link.js";
-import { availableRegionals, type RegionalSupport } from "../aula-virtual/client/regionals.js";
-import { InvalidCredentialsError, MfaError, MfaRequiredError } from "../aula-virtual/client/sso-login.js";
+import express, { type Express, type RequestHandler, type Response } from "express";
+import { linkAulaAccount, type LinkedAccount } from "../aula-virtual/client/link.js";
+import { availableRegionals, type Regional, type RegionalSupport } from "../aula-virtual/client/regionals.js";
+import { InvalidCredentialsError, MfaError, type MfaPrompt } from "../aula-virtual/client/sso-login.js";
 import { AULA_PLATFORM } from "../aula-virtual/client/stored-session.js";
 import { logger } from "../shared/logger.js";
 import type { SessionStore, StoredUser } from "../shared/store/session-store.js";
-import { RateLimiter } from "./expiring.js";
+import { Expiring, RateLimiter } from "./expiring.js";
+import { PendingLogin } from "./pending-login.js";
 
 /** Intentos de `/admin/verificar` por cuenta del aula cada 15 minutos: que no sirva para probar contraseñas. */
 const VERIFY_ATTEMPTS = 5;
 const VERIFY_WINDOW_MS = 15 * 60_000;
+/** Cuánto tiene el usuario para completar el segundo factor, en milisegundos: lo mismo que en el login de OAuth. */
+const SECOND_FACTOR_TTL_MS = 10 * 60_000;
+
+/** Una verificación con usuario y contraseña ya mandados, que puede quedar esperando el segundo factor. */
+interface PendingVerification {
+    flow: PendingLogin<LinkedAccount>;
+    regional: Regional;
+    username: string;
+}
 
 const SUPPORT: Record<RegionalSupport, string> = { verified: "verificada", candidate: "candidata", unsupported: "sin_soporte" };
 
@@ -25,6 +35,7 @@ const isoDate = (seconds: number) => new Date(seconds * 1000).toISOString();
 export function mountAdmin(app: Express, store: SessionStore, secret: string) {
     const json = express.json({ limit: "4kb" });
     const verifyLimiter = new RateLimiter(VERIFY_ATTEMPTS, VERIFY_WINDOW_MS);
+    const secondFactors = new Expiring<PendingVerification>(SECOND_FACTOR_TTL_MS);
 
     const requireSecret: RequestHandler = (req, res, next) => {
         const got = Buffer.from(req.headers.authorization ?? "");
@@ -91,6 +102,7 @@ export function mountAdmin(app: Express, store: SessionStore, secret: string) {
      * `{ regional, usuario, contrasena }` → entra al aula como el login de OAuth: crea el usuario si no
      * existe y le guarda la sesión, así ya puede usar las tools. Devuelve `{ usuario, nombre, email,
      * primero? }`, con `primero` si fue el primero en verificar la regional; si no entra, `{ error, motivo }`.
+     * Si Microsoft pide MFA, devuelve `{ segundoFactor }` y el login sigue con `/admin/segundo-factor`.
      */
     app.post("/admin/verificar", requireSecret, json, async (req, res) => {
         const id = typeof req.body?.regional === "string" ? req.body.regional : "";
@@ -106,8 +118,34 @@ export function mountAdmin(app: Express, store: SessionStore, secret: string) {
         if (!verifyLimiter.allow(`${regional.id}:${username.toLowerCase()}`)) {
             return void res.status(429).json({ error: "intentos", motivo: "Demasiados intentos. Esperá unos minutos." });
         }
+        const flow = new PendingLogin((secondFactor) => linkAulaAccount(store, regional, { username, password }, secondFactor));
+        await advance(res, { flow, regional, username });
+    });
+
+    /**
+     * `{ login, respuesta }` → contesta lo que pidió el segundo factor: el `id` del método, el código o
+     * cualquier cosa cuando el usuario ya aprobó. Devuelve lo mismo que `/admin/verificar`.
+     */
+    app.post("/admin/segundo-factor", requireSecret, json, async (req, res) => {
+        const id = typeof req.body?.login === "string" ? req.body.login : "";
+        const verification = id ? secondFactors.get(id) : undefined;
+        if (!verification) {
+            return void res.status(410).json({ error: "vencido", motivo: "Pasó demasiado tiempo. Volvé a iniciar sesión." });
+        }
+        verification.flow.answer(typeof req.body?.respuesta === "string" ? req.body.respuesta : "");
+        await advance(res, verification, id);
+    });
+
+    /** Sigue el login hasta que termina o pide el segundo factor; `id` es el de uno que ya estaba esperando. */
+    async function advance(res: Response, verification: PendingVerification, id?: string) {
+        const { flow, regional, username } = verification;
         try {
-            const account = await linkAulaAccount(store, regional, { username, password });
+            const step = await flow.next();
+            if ("prompt" in step) {
+                return void res.json({ segundoFactor: secondFactorJson(id ?? secondFactors.add(verification), step.prompt) });
+            }
+            if (id) secondFactors.take(id);
+            const account = step.done;
             logger.info(`Admin: ${account.username} (${regional.id}) vinculó su aula.`);
             res.json({
                 usuario: account.username,
@@ -116,17 +154,26 @@ export function mountAdmin(app: Express, store: SessionStore, secret: string) {
                 primero: account.firstVerifier || undefined,
             });
         } catch (e) {
+            if (id) secondFactors.take(id);
             if (e instanceof InvalidCredentialsError) {
                 return void res.status(401).json({ error: "credenciales", motivo: "El aula rechazó el usuario o la contraseña." });
             }
-            if (e instanceof MfaRequiredError || e instanceof MfaError) {
-                return void res.status(422).json({
-                    error: "mfa",
-                    motivo: "La cuenta de Microsoft pide un segundo factor (MFA): que entre por la página de login.",
-                });
-            }
+            if (e instanceof MfaError) return void res.status(422).json({ error: "mfa", motivo: e.message });
             logger.warn(`Verificación de ${username} (${regional.id}): ${(e as Error).message}`);
             res.status(502).json({ error: "aula", motivo: `No pudimos entrar al aula de ${regional.name}.` });
         }
-    });
+    }
+}
+
+/**
+ * Lo que pide el segundo factor, para que el panel se lo muestre al usuario. `login` es el id con el que
+ * se contesta; `paso` es "elegir" (con `metodos`), "codigo" (con `reintento` si el anterior estaba mal)
+ * o "aprobar" (con `numero` si Authenticator pide tipearlo).
+ */
+function secondFactorJson(login: string, prompt: MfaPrompt) {
+    if (prompt.step === "choose") {
+        return { login, paso: "elegir", metodos: prompt.methods.map((m) => ({ id: m.id, nombre: m.label })) };
+    }
+    if (prompt.step === "code") return { login, paso: "codigo", metodo: prompt.method.label, reintento: prompt.retry || undefined };
+    return { login, paso: "aprobar", metodo: prompt.method.label, numero: prompt.number };
 }
