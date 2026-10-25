@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { AulaSession } from "./aula-virtual/client/session.js";
 import { registerAulaVirtualTools } from "./aula-virtual/tools.js";
+import { registerPlanTools } from "./plan/tools.js";
 import type { FileSource } from "./shared/uploads.js";
 
 /**
@@ -10,10 +11,11 @@ import type { FileSource } from "./shared/uploads.js";
 export function createServer(aula: AulaSession, files: FileSource): McpServer {
     const server = new McpServer({
         name: "UTN-MCP",
-        version: "0.8.1",
+        version: "0.9.0",
     });
 
     registerAulaVirtualTools(server, aula, files);
+    registerPlanTools(server, files.local);
 
     return server;
 }
