@@ -7,7 +7,7 @@ import { exportsDir } from "../../shared/paths.js";
 import { getCourseFiles, getUserCourses, type CourseFileEntry } from "../client/client.js";
 import { MoodleError } from "../client/moodle-api.js";
 import type { AulaSession } from "../client/session.js";
-import { parseAddress } from "./address.js";
+import { AddressLevel, parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
 
 export const capFromEnv = (raw: string | undefined, fallback: number): number => {
@@ -147,7 +147,7 @@ export async function writePackFile(dir: string, courseName: string, bytes: Uint
 export async function buildStudyPack(session: AulaSession, rawAddress: string, options: StudyPackOptions = {}) {
     const { includeAll = false, dryRun = false, forceInclude = [], forceExclude = [] } = options;
     const address = parseAddress(rawAddress);
-    if (address.level !== "course") {
+    if (address.level !== AddressLevel.Course) {
         throw new Error(
             `Para armar el pack pasá la dirección de un curso entero ("/curso/{courseId}", de aula_list_courses), no "${rawAddress}".`,
         );
