@@ -5,7 +5,7 @@ import { mergePdfs } from "../../shared/documents/merge.js";
 import { exportsDir } from "../../shared/paths.js";
 import { getCourseFiles, getUserCourses, type CourseFileEntry } from "../client/client.js";
 import type { AulaSession } from "../client/session.js";
-import { AddressLevel, parseAddress } from "./address.js";
+import { parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
 import { fetchFile } from "../client/moodle-api.js";
 
@@ -64,7 +64,7 @@ export async function writePackFile(dir: string, courseName: string, bytes: Uint
  */
 export async function buildStudyPack(session: AulaSession, rawAddress: string, archivos?: string[]) {
     const address = parseAddress(rawAddress);
-    if (address.level !== AddressLevel.Course) {
+    if (address.level !== "course") {
         throw new Error(
             `Para armar el pack pasá la dirección de un curso entero ("/curso/{courseId}", de aula_list_courses), no "${rawAddress}".`,
         );
@@ -156,7 +156,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
             continue;
         }
         seen.set(hash, name);
-        inputs.push({ title: name, bytes });
+        inputs.push({ title: entry.module, bytes });
         kept.push(entry);
         totalBytes += bytes.length;
     }
