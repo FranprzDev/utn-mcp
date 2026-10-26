@@ -46,8 +46,9 @@ export function registerAutogestionTools(
         {
             description:
                 "Estado académico del usuario según la autogestión de su regional: cada materia OBLIGATORIA " +
-                "del plan con su estado (regular, aprobada, libre), plan, nota y fecha (no es el catálogo " +
-                "completo de la carrera: cubre las obligatorias y puede incluir electivas ya aprobadas). " +
+                "del plan con su estado (regular, aprobada, libre), plan, nota y fecha. No es el catálogo " +
+                "completo de la carrera: puede incluir electivas aprobadas y no listar materias sin " +
+                "movimientos cargados. " +
                 "Las que se están cursando se marcan como Cursando cruzando con " +
                 "las notas de parciales, que en Sysacad son las que tienen horarios cargados. Requiere " +
                 "`utn-mcp login autogestion` una vez; las credenciales son las del sistema de autogestión, " +
