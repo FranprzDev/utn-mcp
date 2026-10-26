@@ -1,5 +1,6 @@
 import { HttpError } from "../../shared/http.js";
 import type { AutogestionSession } from "../client/session.js";
+import { getNotasParciales, normalizarMateria } from "./notas-parciales.js";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
 export interface EstadoMateria {
@@ -32,7 +33,7 @@ export async function getEstadoAcademico(session: AutogestionSession): Promise<E
         col("fecha"),
     ];
     const known = new Set([materia, estado, plan, anio, nota, fecha].filter((i) => i >= 0));
-    return table.rows.map((cells) => {
+    const materias = table.rows.map((cells) => {
         const entry: EstadoMateria = { materia: cells[materia] ?? "" };
         if (estado >= 0) entry.estado = cells[estado] || undefined;
         if (plan >= 0) entry.plan = cells[plan] || undefined;
@@ -43,4 +44,15 @@ export async function getEstadoAcademico(session: AutogestionSession): Promise<E
         if (extra.length > 0) entry.extra = extra;
         return entry;
     });
+    if (connector.fetchNotasParciales) {
+        const cursando = new Set(
+            (await getNotasParciales(session))
+                .filter((m) => m.cursando)
+                .map((m) => normalizarMateria(m.materia)),
+        );
+        for (const entry of materias) {
+            if (cursando.has(normalizarMateria(entry.materia))) entry.estado = "Cursando";
+        }
+    }
+    return materias;
 }
