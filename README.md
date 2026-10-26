@@ -19,7 +19,7 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_list_courses` | Lista tus cursos. Es el punto de partida. |
 | `aula_open` | Entra a un curso, un módulo, un foro o una discusión. Cada respuesta trae las direcciones de lo que hay adentro y de un nivel más arriba, así el agente navega sin perderse. |
 | `aula_read_file` | Lee un archivo del aula, por partes cuando es largo. |
-| `aula_study_pack` | Une el material de estudio de una materia en un solo PDF con índice (un 'machacado'), dejando afuera lo administrativo, guardado en tu compu. Solo en modo local. |
+| `aula_study_pack` | Une en un solo PDF con índice los apuntes que elijas de una materia (un 'machacado'), guardado en tu compu. Solo en modo local. |
 | `aula_get_site_info` | Datos de tu usuario y de tu regional en el aula virtual. |
 | `aula_forum_post` | Abre un hilo en un foro o responde en una discusión. |
 | `aula_forum_edit_post` | Edita una publicación tuya. |
@@ -164,6 +164,7 @@ La configuración va en variables de entorno o en un `.env` en la carpeta desde 
 | `UTN_MCP_ADMIN_SECRET` | Habilita la API de `/admin` para un panel de cuentas tuyo: `POST /admin/usuarios` (todos los usuarios con sus apps), `/admin/clientes` y `/admin/clientes/revocar` (las apps de un usuario, por email), `/admin/regionales` (las regionales con su soporte) y `/admin/verificar` (entra al aula con usuario y contraseña, como el login de OAuth, y le guarda la sesión). | — |
 | `UTN_MCP_LOGIN_URL` | Página donde el usuario renueva su sesión del aula; el agente se la pasa. | `<UTN_MCP_PUBLIC_URL>/login` |
 | `UTN_MCP_DB`, `UTN_MCP_KEY` | Base de sesiones y su clave de cifrado (32 bytes en base64). | En la carpeta de config |
+| `UTN_MCP_PACK_MAX_FILES`, `UTN_MCP_PACK_MAX_MB`, `UTN_MCP_PACK_MAX_FINAL_MB` | Topes del compilado de estudio (`aula_study_pack`, solo modo local): archivos por pack, MB de descarga total y MB del PDF final, que se arma entero en memoria. | 150, 300 y 30 |
 
 Con Docker, detrás de un reverse proxy con HTTPS en la misma máquina (red host, para que el rate limit del login vea la IP real):
 ```bash
