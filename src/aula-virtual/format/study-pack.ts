@@ -7,7 +7,7 @@ import { getCourseFiles, getUserCourses, type CourseFileEntry } from "../client/
 import type { AulaSession } from "../client/session.js";
 import { AddressLevel, parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
-import { fetchPackFile } from "./pack-download.js";
+import { fetchFile } from "../client/moodle-api.js";
 
 /**
  * Topes de tamaño por pack: pdf-lib junta todo el resultado en memoria, así que sin tope total un
@@ -119,7 +119,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
         }
         let bytes: Uint8Array;
         try {
-            bytes = await fetchPackFile(session, downloadUrl(baseUrl, entry.file.fileurl), MAX_BYTES);
+            bytes = (await fetchFile(session, downloadUrl(baseUrl, entry.file.fileurl), MAX_BYTES)).bytes;
         } catch (e) {
             omitted.push({ nombre: name, seccion: entry.section, motivo: (e as Error).message });
             continue;
