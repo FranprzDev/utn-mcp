@@ -13,17 +13,24 @@ export interface CorrelatividadMateria {
 }
 
 /**
- * Correlatividades de la carrera según la autogestión: la tabla cuyo encabezado nombra materia y
- * correlatividad. Es la fuente dinámica que el issue #22 quiere en lugar de datos fijos del repo.
+ * Correlatividades de la carrera según la autogestión, separadas como las publica el sistema:
+ * `cursar` siempre; `rendir` cuando el sistema la tiene en otra página (Sysacad sí, verificado
+ * con cuenta real oct 2026). Es la fuente dinámica que el issue #22 quiere en lugar de datos
+ * fijos del repo.
  */
-export async function getCorrelatividades(session: AutogestionSession): Promise<CorrelatividadMateria[]> {
-    const connector = await session.getConnector();
-    const html = await connector.fetchCorrelatividades();
+export interface Correlatividades {
+    cursar: CorrelatividadMateria[];
+    rendir?: CorrelatividadMateria[];
+}
+
+/** La tabla de correlatividades de una página: encabezado con materia y correlatividad. */
+function parseCorrelatividades(html: string, pagina: string): CorrelatividadMateria[] {
     const table = tableWithHeaders(html, ["materia", "correlatividad"]);
     if (!table) {
         throw new HttpError(
-            "La página de correlatividades de Sysacad no trajo la tabla esperada (materia/correlatividad): " +
-                "puede haber cambiado el layout. El parser está en src/autogestion/format/correlatividades.ts.",
+            `La página de correlatividades para ${pagina} de Sysacad no trajo la tabla esperada ` +
+                "(materia/correlatividad): puede haber cambiado el layout. " +
+                "El parser está en src/autogestion/format/correlatividades.ts.",
         );
     }
     const materia = columnIndex(table, "materia");
@@ -42,4 +49,16 @@ export async function getCorrelatividades(session: AutogestionSession): Promise<
         if (extra.length > 0) entry.extra = extra;
         return entry;
     });
+}
+
+/** Correlatividades de cursar y, si el conector la publica, de rendir. */
+export async function getCorrelatividades(session: AutogestionSession): Promise<Correlatividades> {
+    const connector = await session.getConnector();
+    const result: Correlatividades = {
+        cursar: parseCorrelatividades(await connector.fetchCorrelatividades(), "cursar"),
+    };
+    if (connector.fetchCorrelatividadesExamen) {
+        result.rendir = parseCorrelatividades(await connector.fetchCorrelatividadesExamen(), "rendir");
+    }
+    return result;
 }

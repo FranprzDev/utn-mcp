@@ -13,8 +13,13 @@ export interface AutogestionConnector {
     login(credentials: AutogestionCredentials): Promise<void>;
     /** HTML de la página de estado académico del alumno logueado. */
     fetchEstadoAcademico(): Promise<string>;
-    /** HTML de la página de correlatividades de la carrera del alumno logueado. */
+    /** HTML de la página de correlatividades para cursar de la carrera del alumno logueado. */
     fetchCorrelatividades(): Promise<string>;
+    /**
+     * HTML de la página de correlatividades para rendir, si el sistema las publica aparte
+     * (Sysacad sí: correlatividadCursado.asp y correlatividadExamen.asp son páginas distintas).
+     */
+    fetchCorrelatividadesExamen?(): Promise<string>;
 }
 
 /** Credenciales de un sistema de autogestión. En Sysacad `username` es el legajo. */

@@ -92,7 +92,13 @@ export class SysacadAspConnector implements AutogestionConnector {
     }
 
     async fetchCorrelatividades(): Promise<string> {
-        return this.fetchLinkedPage(/correlatividad/i, "correlatividades");
+        // El menú la anuncia como "Correlatividad para cursar"; primero en orden de menú.
+        return this.fetchLinkedPage(/correlatividad\s*para\s*cursar/i, "correlatividades para cursar");
+    }
+
+    async fetchCorrelatividadesExamen(): Promise<string> {
+        // Página aparte: "Correlatividad para rendir" (correlatividadExamen.asp).
+        return this.fetchLinkedPage(/correlatividad\s*para\s*rendir/i, "correlatividades para rendir");
     }
 
     /**
