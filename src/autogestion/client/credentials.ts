@@ -5,7 +5,6 @@ const SERVICE = "utn-mcp";
 /** Una entrada por sistema: la credencial es por sistema, no por regional (issue #22). */
 const account = (systemId: string) => `autogestion-${systemId}`;
 
-// Import dinámico: si el binario nativo o el Secret Service (Linux) no están, seguimos con env vars.
 async function entry(systemId: string) {
     const { Entry } = await import("@napi-rs/keyring");
     return new Entry(SERVICE, account(systemId));

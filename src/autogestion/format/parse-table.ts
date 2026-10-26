@@ -26,7 +26,6 @@ export function parseTables(html: string): ParsedTable[] {
             );
             if (cells.length > 0) rows.push(cells);
         }
-        // Si la primera fila es un título (menos celdas que la que sigue), el encabezado es la segunda.
         if (rows.length > 2 && rows[0].length < rows[1].length) {
             tables.push({ headers: rows[1], rows: rows.slice(2) });
         } else if (rows.length > 1) {

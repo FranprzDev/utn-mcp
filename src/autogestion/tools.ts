@@ -4,7 +4,6 @@ import type { AutogestionSession } from "./client/session.js";
 import { getCorrelatividades } from "./format/correlatividades.js";
 import { getEstadoAcademico } from "./format/estado-academico.js";
 
-// JSON compacto: indentar estas respuestas cuesta ~25% más de contexto y no se lee mejor.
 const json = (data: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data) }],
 });

@@ -47,7 +47,6 @@ async function main() {
 
     if (positionals[0] === "login") {
         if (positionals[1] === "autogestion") {
-            // La misma regional que se usa para el aula decide qué sistema de autogestión toca.
             await runAutogestionLogin((await new LocalSession().getRegional()).id);
         } else {
             await runLogin(values.http);
