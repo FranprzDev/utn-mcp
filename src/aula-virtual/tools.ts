@@ -181,7 +181,7 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     "archivos (nombre, url, sección y tipo) y permite elegir los apuntes sin bajar " +
                     "nada. Es un compilado íntegro, no un resumen.\n\n" +
                     "Hay topes por memoria: 150 archivos, 300 MB de descarga total y 30 MB el PDF " +
-                    "final (estimado con los tamaños de entrada, para no bajar todo al pedo). Lo " +
+                    "final (estimado con los tamaños de entrada, para no bajar archivos de más). Lo " +
                     "que no entra queda en `omitidos` con el motivo: se pide el resto en otro pack. " +
                     "La respuesta trae la ruta en `archivo` y `materiales` con sección, módulo, " +
                     "páginas y página de inicio de cada uno.\n\n" +

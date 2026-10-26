@@ -145,7 +145,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
             continue;
         }
         // Corte temprano del tope del PDF final, estimado con los tamaños de entrada: lo que ya
-        // no puede entrar no se baja al pedo ni tira abajo el pack entero al final.
+        // no puede entrar no se baja de más ni tira abajo el pack entero al final.
         if (totalBytes + bytes.length > MAX_FINAL_BYTES) {
             finalLleno = true;
             omitted.push({
@@ -156,10 +156,19 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
             continue;
         }
         seen.set(hash, name);
-        inputs.push({ title: entry.module, bytes });
+        inputs.push({ title: name, bytes });
         kept.push(entry);
         totalBytes += bytes.length;
     }
+
+    // En el índice va el módulo, que se lee mejor que el archivo; si el módulo aporta más de un
+    // archivo, también el archivo, para que las entradas no queden repetidas.
+    const perModule = new Map<string, number>();
+    const moduleKey = (e: CourseFileEntry) => `${e.section}\n${e.module}`;
+    for (const e of kept) perModule.set(moduleKey(e), (perModule.get(moduleKey(e)) ?? 0) + 1);
+    kept.forEach((e, i) => {
+        inputs[i].title = perModule.get(moduleKey(e))! > 1 ? `${e.module}: ${e.file.filename}` : e.module;
+    });
 
     const courseName = course?.shortname ?? `curso-${address.courseId}`;
     const dir = exportsDir();
@@ -197,7 +206,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
         curso: course?.fullname ?? courseName,
         paginas: pack.pages,
         materiales: pack.merged.map((m) => ({
-            nombre: m.title,
+            nombre: kept[m.index].file.filename,
             seccion: kept[m.index].section,
             modulo: kept[m.index].module,
             paginas: m.pages,
