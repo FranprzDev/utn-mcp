@@ -1,13 +1,13 @@
 import { SysacadAspConnector } from "./sysacad-asp.js";
+import type { Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "./types.js";
 
 export interface AutogestionConnector {
     readonly systemId: string;
     login(credentials: AutogestionCredentials): Promise<void>;
-    fetchEstadoAcademico(): Promise<string>;
-    fetchCorrelatividades(): Promise<string>;
-    fetchCorrelatividadesExamen?(): Promise<string>;
-    fetchNotasParciales?(): Promise<string>;
-    fetchExamenes?(): Promise<string>;
+    estadoAcademico(): Promise<EstadoMateria[]>;
+    correlatividades(): Promise<Correlatividades>;
+    notasParciales?(): Promise<NotasParcialesMateria[]>;
+    examenes?(): Promise<ExamenMateria[]>;
 }
 
 export interface AutogestionCredentials {

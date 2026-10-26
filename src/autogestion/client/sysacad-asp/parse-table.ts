@@ -1,4 +1,4 @@
-import { htmlToText } from "../../shared/html.js";
+import { htmlToText } from "../../../shared/html.js";
 
 export interface ParsedTable {
     headers: string[];
