@@ -68,18 +68,14 @@ export class SysacadAspConnector implements AutogestionConnector {
             throw new HttpError(`No se pudo conectar con ${new URL(BASE_URL).host}: ${(e as Error).message}`);
         }
         const html = decode(await res.arrayBuffer());
-        // Primero la sesión: un login exitoso también trae la palabra textoError en su <style>.
         const sessionId = SESSION_ID_PATTERN.exec(html)?.[1];
         if (!sessionId) {
-            // El rechazo real es un <p class="textoError">ERROR: ...</p> en el cuerpo, sin sesión.
-            // Sin error explícito pero sin sesión: SysacadWEB a veces reimprime la home ante un rechazo.
             if (LOGIN_ERROR_PATTERN.test(html) || LOGIN_PAGE_MARKERS.some((m) => html.includes(m))) {
                 throw new InvalidCredentialsError("Sysacad");
             }
             throw new HttpError("Sysacad no devolvió sesión y no es la página de login: cambió la pantalla de ingreso.");
         }
         this.sessionId = sessionId;
-        // La cookie de sesión ASP acompaña todas las internas; sin ella el `id` solo no alcanza.
         this.sessionCookie = res.headers
             .getSetCookie()
             .map((c) => c.split(";")[0])
@@ -92,12 +88,10 @@ export class SysacadAspConnector implements AutogestionConnector {
     }
 
     async fetchCorrelatividades(): Promise<string> {
-        // El menú la anuncia como "Correlatividad para cursar"; primero en orden de menú.
         return this.fetchLinkedPage(/correlatividad\s*para\s*cursar/i, "correlatividades para cursar");
     }
 
     async fetchCorrelatividadesExamen(): Promise<string> {
-        // Página aparte: "Correlatividad para rendir" (correlatividadExamen.asp).
         return this.fetchLinkedPage(/correlatividad\s*para\s*rendir/i, "correlatividades para rendir");
     }
 
@@ -125,7 +119,6 @@ export class SysacadAspConnector implements AutogestionConnector {
         if (!this.sessionId) throw new LoginRequiredError("Sysacad");
         const url = new URL(href, `${BASE_URL}/`);
         if (url.origin !== new URL(BASE_URL).origin) {
-            // Un enlace interno legítimo no sale del host; no le mandamos la sesión a otro lado.
             throw new HttpError(`Sysacad devolvió un enlace fuera de ${url.host}: no se sigue.`);
         }
         if (!url.searchParams.get("id")) url.searchParams.set("id", this.sessionId);
@@ -140,7 +133,6 @@ export class SysacadAspConnector implements AutogestionConnector {
         }
         const html = decode(await res.arrayBuffer());
         if (LOGIN_PAGE_MARKERS.some((m) => html.includes(m))) {
-            // Sesión vencida: una sola marca para que la tool decida re-loguear una vez, como refreshToken.
             this.sessionId = null;
             this.sessionCookie = null;
             throw new LoginRequiredError("Sysacad");

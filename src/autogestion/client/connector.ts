@@ -68,7 +68,6 @@ export interface AutogestionSystem {
  * cada regional enchufa el suyo y el MCP no le impone al usuario un sistema que no usa.
  */
 const SYSTEM_BY_REGIONAL: Record<string, string> = {
-    // FRT usa SysacadWEB (https://sysacad.frt.utn.edu.ar/, verificado públicamente oct 2026).
     frt: "sysacad-asp",
 };
 
@@ -77,7 +76,6 @@ export const SYSTEMS: Record<string, AutogestionSystem> = {
     "sysacad-asp": {
         id: "sysacad-asp",
         name: "SYSACAD (ASP clásico, FRT)",
-        // Verificado con una cuenta real de FRT (oct 2026): login, estado académico y correlatividades.
         support: "verified",
         create: () => new SysacadAspConnector(),
     },

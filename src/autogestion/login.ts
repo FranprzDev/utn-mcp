@@ -16,7 +16,6 @@ export async function runAutogestionLogin(regionalId: string): Promise<void> {
     if (!username) throw new Error("Falta el usuario.");
     const password = await askHidden("Contraseña: ");
 
-    // Se guardan recién después de comprobar que el sistema las aceptó.
     const connector = system.create();
     await connector.login({ username, password });
 
