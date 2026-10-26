@@ -5,6 +5,11 @@ import {
     type AutogestionConnector,
     type AutogestionCredentials,
 } from "./connector.js";
+import type { Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "./types.js";
+import { parseCorrelatividadesPagina } from "./sysacad-asp/correlatividades.js";
+import { parseEstadoAcademico } from "./sysacad-asp/estado-academico.js";
+import { parseExamenes } from "./sysacad-asp/examenes.js";
+import { normalizarMateria, parseNotasParciales } from "./sysacad-asp/notas-parciales.js";
 
 const BASE_URL = "https://sysacad.frt.utn.edu.ar";
 
@@ -60,23 +65,51 @@ export class SysacadAspConnector implements AutogestionConnector {
         this.menuHtml = html;
     }
 
-    async fetchEstadoAcademico(): Promise<string> {
+    async estadoAcademico(): Promise<EstadoMateria[]> {
+        const materias = parseEstadoAcademico(await this.fetchEstadoAcademico());
+        const cursando = new Set(
+            parseNotasParciales(await this.fetchNotasParciales())
+                .filter((m) => m.cursando)
+                .map((m) => normalizarMateria(m.materia)),
+        );
+        for (const entry of materias) {
+            if (cursando.has(normalizarMateria(entry.materia))) entry.estado = "Cursando";
+        }
+        return materias;
+    }
+
+    async correlatividades(): Promise<Correlatividades> {
+        return {
+            cursar: parseCorrelatividadesPagina(await this.fetchCorrelatividades(), "cursar"),
+            rendir: parseCorrelatividadesPagina(await this.fetchCorrelatividadesExamen(), "rendir"),
+        };
+    }
+
+    async notasParciales(): Promise<NotasParcialesMateria[]> {
+        return parseNotasParciales(await this.fetchNotasParciales());
+    }
+
+    async examenes(): Promise<ExamenMateria[]> {
+        return parseExamenes(await this.fetchExamenes());
+    }
+
+    private async fetchEstadoAcademico(): Promise<string> {
         return this.fetchLinkedPage(/estado\s*acad/i, "estado académico");
     }
 
-    async fetchCorrelatividades(): Promise<string> {
+    private async fetchCorrelatividades(): Promise<string> {
         return this.fetchLinkedPage(/correlatividad\s*para\s*cursar/i, "correlatividades para cursar");
     }
 
-    async fetchCorrelatividadesExamen(): Promise<string> {
+    private async fetchCorrelatividadesExamen(): Promise<string> {
         return this.fetchLinkedPage(/correlatividad\s*para\s*rendir/i, "correlatividades para rendir");
     }
 
-    async fetchNotasParciales(): Promise<string> {
+    private async fetchNotasParciales(): Promise<string> {
         return this.fetchLinkedPage(/notas?\s*de?\s*parcial/i, "notas de parciales");
     }
 
-    async fetchExamenes(): Promise<string> {
+    private async fetchExamenes(): Promise<string> {
         return this.fetchLinkedPage(/^ex[aá]menes$/i, "exámenes");
     }
 
