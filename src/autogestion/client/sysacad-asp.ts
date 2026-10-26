@@ -76,6 +76,10 @@ export class SysacadAspConnector implements AutogestionConnector {
         return this.fetchLinkedPage(/notas?\s*de?\s*parcial/i, "notas de parciales");
     }
 
+    async fetchExamenes(): Promise<string> {
+        return this.fetchLinkedPage(/^ex[aá]menes$/i, "exámenes");
+    }
+
     private async fetchLinkedPage(linkText: RegExp, label: string): Promise<string> {
         if (!this.sessionId || !this.menuHtml) throw new LoginRequiredError("Sysacad");
         const href = this.findMenuLink(this.menuHtml, linkText);
