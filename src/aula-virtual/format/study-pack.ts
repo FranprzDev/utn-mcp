@@ -106,7 +106,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
         );
     }
 
-    const capMotivo = `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`;
+    const capMotivo = `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB)`;
     const inputs: { title: string; bytes: Uint8Array }[] = [];
     const kept: CourseFileEntry[] = [];
     const seen = new Map<string, string>(); // hash -> nombre del primero con ese contenido

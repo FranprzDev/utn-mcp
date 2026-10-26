@@ -173,37 +173,20 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
             "aula_study_pack",
             {
                 description:
-                    "Arma un único PDF con el material de estudio de una materia (el usuario le puede " +
-                    "decir compilado de estudio, apuntes unidos, 'machacado' o 'titán'): busca los PDF " +
-                    "de todas las secciones del curso, los baja y los une en un solo archivo con un " +
-                    "índice clickeable al principio: cada entrada abre la página donde empieza " +
-                    "ese material, y cada página tiene arriba un enlace \"Volver al índice\" (en " +
-                    "una franja agregada, sin tapar el contenido).\n\n" +
-                    "Por defecto deja afuera el material administrativo (cronogramas, programas " +
-                    "analíticos, bibliografías, formatos de entrega, detectado por palabras clave en " +
-                    "el texto de las primeras dos páginas) y los duplicados exactos, porque el PDF es " +
-                    "para estudiar; con `incluir_administrativo` en true une absolutamente todo. No es " +
-                    "una clasificación semántica ni garantía: lo dudoso, escaneado o ilegible queda " +
-                    "adentro y todo lo omitido sale listado con el motivo (y la coincidencia que lo " +
-                    "descartó, si fue por el filtro). Es un compilado, no un resumen: el contenido " +
-                    "queda íntegro.\n\n" +
-                    "Para revisar la lista antes de unir: `solo_listar` en true baja y clasifica todo " +
-                    "pero no genera el archivo, y devuelve `incluiria` y `omitidos` con motivos. " +
-                    "Después se llama de nuevo con `incluir` (nombres de archivo a incluir aunque " +
-                    "parezcan administrativos) o `excluir` (nombres a dejar afuera); un nombre que no " +
-                    "existe en el curso sale avisado en `avisos`. Máximo del PDF final: 30 MB; si lo supera NO " +
-                    "se guarda y el error dice el peso y las opciones (excluir archivos o subir el " +
-                    "tope con UTN_MCP_PACK_MAX_FINAL_MB si el usuario lo decide). Los PDF se bajan " +
-                    "de a uno, dos veces si se revisa primero.\n\n" +
-                    "Por memoria hay topes por pack (150 archivos y 300 MB, configurables con las " +
-                    "variables UTN_MCP_PACK_MAX_FILES y UTN_MCP_PACK_MAX_MB): lo que queda afuera por un " +
-                    "tope también sale listado, para pedir el resto en otro pack.\n\n" +
-                    "La `direccion` del curso sale de aula_list_courses. El PDF queda guardado en la " +
-                    "compu del usuario: la respuesta trae la ruta en `archivo`, lo que incluyó " +
-                    "(`materiales`, con su sección, su módulo y la página en que empieza cada uno) y " +
-                    "lo que no entró (`omitidos`, con el motivo). Los archivos que no son PDF no " +
-                    "entran: para leerlos o pasarle su link al usuario, usá aula_open y " +
-                    "aula_read_file.",
+                    "Une PDF del aula en un solo compilado de estudio con índice clickeable (cada " +
+                    "entrada abre la página donde empieza ese material, y cada página tiene arriba " +
+                    "un enlace para volver), guardado en la compu del usuario. Une ÚNICAMENTE PDF; " +
+                    "si una URL pedida no es PDF, queda en `omitidos` con el motivo.\n\n" +
+                    "Conviene llamar antes a aula_open del curso: devuelve cada módulo con sus " +
+                    "archivos (nombre, url, sección y tipo) y permite elegir los apuntes sin bajar " +
+                    "nada. Es un compilado íntegro, no un resumen.\n\n" +
+                    "Hay topes por memoria: 150 archivos, 300 MB de descarga total y 30 MB el PDF " +
+                    "final (estimado con los tamaños de entrada, para no bajar todo al pedo). Lo " +
+                    "que no entra queda en `omitidos` con el motivo: se pide el resto en otro pack. " +
+                    "La respuesta trae la ruta en `archivo` y `materiales` con sección, módulo, " +
+                    "páginas y página de inicio de cada uno.\n\n" +
+                    "La `direccion` del curso sale de aula_list_courses. Para leer o pasarle al " +
+                    "usuario archivos que no son PDF, usá aula_open y aula_read_file.",
                 inputSchema: z.object({
                     direccion: z
                         .string()
