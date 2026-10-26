@@ -208,49 +208,21 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                     direccion: z
                         .string()
                         .describe('Dirección del curso, de aula_list_courses. Ej: "/curso/691".'),
-                    incluir_administrativo: z
-                        .boolean()
-                        .optional()
-                        .describe(
-                            "Si es true, une TODOS los PDF del curso, incluido el material administrativo. " +
-                                "Por defecto ese material queda afuera.",
-                        ),
-                    solo_listar: z
-                        .boolean()
-                        .optional()
-                        .describe(
-                            "Si es true, no une ni guarda nada: baja los PDF, los clasifica y devuelve la " +
-                                "propuesta (`incluiria` y `omitidos` con motivos) para revisarla antes. " +
-                                "Los PDF se vuelven a bajar en la llamada siguiente.",
-                        ),
-                    incluir: z
+                    archivos: z
                         .array(z.string())
                         .optional()
                         .describe(
-                            "Nombres de archivo exactos a incluir aunque el filtro los descarte como " +
-                                "administrativos. Útil después de revisar la propuesta de `solo_listar`.",
-                        ),
-                    excluir: z
-                        .array(z.string())
-                        .optional()
-                        .describe(
-                            "Nombres de archivo exactos a dejar afuera a pedido, aunque el filtro los " +
-                                "conserve. Útil después de revisar la propuesta de `solo_listar`.",
+                            "URL de los PDF a unir, tal como las devuelve aula_open del curso (conviene " +
+                                "llamarlo antes y elegir: cada archivo trae nombre, sección y tipo). El pack " +
+                                "sigue el orden del aula, no el de esta lista. Sin `archivos`, une todos los " +
+                                "PDF del curso.",
                         ),
                 }),
-                // No es READ_ONLY: no toca el aula, pero escribe un archivo en el disco del usuario.
                 annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
             },
-            async ({ direccion, incluir_administrativo, solo_listar, incluir, excluir }) => {
+            async ({ direccion, archivos }) => {
                 try {
-                    return json(
-                        await buildStudyPack(session, direccion, {
-                            includeAll: incluir_administrativo,
-                            dryRun: solo_listar,
-                            forceInclude: incluir,
-                            forceExclude: excluir,
-                        }),
-                    );
+                    return json(await buildStudyPack(session, direccion, archivos));
                 } catch (e) {
                     return failure(e);
                 }

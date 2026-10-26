@@ -5,10 +5,9 @@ import { mergePdfs } from "../../shared/documents/merge.js";
 import { exportsDir } from "../../shared/paths.js";
 import { getCourseFiles, getUserCourses, type CourseFileEntry } from "../client/client.js";
 import type { AulaSession } from "../client/session.js";
-import { adminPattern } from "./admin-material.js";
-import { fetchPackFile } from "./pack-download.js";
 import { AddressLevel, parseAddress } from "./address.js";
 import { downloadUrl, MAX_BYTES } from "./files.js";
+import { fetchPackFile } from "./pack-download.js";
 
 /**
  * Topes de tamaño por pack: pdf-lib junta todo el resultado en memoria, así que sin tope total un
@@ -23,25 +22,15 @@ const capFromEnv = (raw: string | undefined, fallback: number): number => {
 };
 const MAX_PACK_FILES = capFromEnv(process.env.UTN_MCP_PACK_MAX_FILES, 150);
 const MAX_PACK_BYTES = capFromEnv(process.env.UTN_MCP_PACK_MAX_MB, 300) * 1024 * 1024;
-/** Máximo del PDF final: si lo supera NO se guarda; se informa el peso y las opciones. */
+/** Máximo del PDF final: se estima con los tamaños de entrada ANTES de bajar todo el curso. */
 const MAX_FINAL_MB = capFromEnv(process.env.UTN_MCP_PACK_MAX_FINAL_MB, 30);
+const MAX_FINAL_BYTES = MAX_FINAL_MB * 1024 * 1024;
 
 const isPdf = (e: CourseFileEntry) =>
     e.file.mimetype === "application/pdf" || e.file.filename.toLowerCase().endsWith(".pdf");
 
 /** Los caracteres que no sirven para un nombre de archivo se cambian por "-". */
 const safeFileName = (name: string) => name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "");
-
-export interface StudyPackOptions {
-    /** Une absolutamente todo, incluido el material administrativo. */
-    includeAll?: boolean;
-    /** No une ni escribe nada: devuelve la propuesta de qué incluiría y qué omitiría. */
-    dryRun?: boolean;
-    /** Nombres de archivo a incluir aunque parezcan administrativos. */
-    forceInclude?: string[];
-    /** Nombres de archivo a dejar afuera a pedido. */
-    forceExclude?: string[];
-}
 
 /**
  * Escribe el pack sin pisar packs anteriores: nombre con fecha-hora y, si ya existe (dos packs
@@ -65,15 +54,15 @@ export async function writePackFile(dir: string, courseName: string, bytes: Uint
 }
 
 /**
- * Baja los PDF de un curso y los une en un solo archivo con índice, guardado en exportsDir().
- * Por defecto deja afuera el material administrativo (cronogramas, programas, formatos de
- * entrega, bibliografías) y los duplicados exactos: el compilado es para estudiar.
- * Todo lo omitido queda listado en `omitidos` con el motivo (y la coincidencia, si fue por
- * clasificación). Con `dryRun` no genera el archivo: devuelve la propuesta para revisarla
- * antes, ajustable con `forceInclude` / `forceExclude` por nombre de archivo.
+ * Baja PDF de un curso y los une en un solo archivo con índice, guardado en exportsDir().
+ * Con `archivos` une solo las URL pedidas (tal como las devuelve aula_open, validadas con
+ * `downloadUrl` como en aula_read_file); sin `archivos`, todos los PDF del curso. El pack sigue
+ * el orden del aula, no el de la lista, para que el índice acompañe las unidades. Los duplicados
+ * exactos se descartan al armar, porque ahí se bajan igual. Todo lo omitido queda listado en
+ * `omitidos` con el motivo; en el atajo sin `archivos`, los archivos que no son PDF solo se
+ * cuentan en `archivosNoPdf` en vez de listarse uno por uno.
  */
-export async function buildStudyPack(session: AulaSession, rawAddress: string, options: StudyPackOptions = {}) {
-    const { includeAll = false, dryRun = false, forceInclude = [], forceExclude = [] } = options;
+export async function buildStudyPack(session: AulaSession, rawAddress: string, archivos?: string[]) {
     const address = parseAddress(rawAddress);
     if (address.level !== AddressLevel.Course) {
         throw new Error(
@@ -85,15 +74,38 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
     const course = (await getUserCourses(session)).find((c) => c.id === address.courseId);
     const entries = await getCourseFiles(session, address.courseId);
 
-    const pdfs = entries.filter(isPdf);
-    const omitted = entries
-        .filter((e) => !isPdf(e))
-        .map((e) => ({ nombre: e.file.filename, seccion: e.section, motivo: "no es un PDF" }));
-    if (!pdfs.length) {
-        throw new Error("El curso no tiene ningún PDF en sus secciones visibles.");
+    let selected: ReadonlyArray<CourseFileEntry>;
+    const omitted: { nombre: string; seccion: string; motivo: string }[] = [];
+    if (archivos) {
+        // Cada URL pedida se valida igual que en aula_read_file: solo archivos del aula del usuario.
+        const requested = new Set(archivos.map((u) => downloadUrl(baseUrl, u).href));
+        const byUrl = new Map(entries.map((e) => [downloadUrl(baseUrl, e.file.fileurl).href, e]));
+        const unknown = [...requested].filter((u) => !byUrl.has(u));
+        if (unknown.length) {
+            throw new Error(
+                `Estas URL no son de archivos del curso (salen de aula_open sobre "${rawAddress}"):\n` +
+                    unknown.map((u) => `- ${u}`).join("\n"),
+            );
+        }
+        // El orden lo manda el aula, no la lista: el índice sigue las unidades.
+        selected = entries.filter((e) => requested.has(downloadUrl(baseUrl, e.file.fileurl).href));
+        for (const e of selected.filter((x) => !isPdf(x))) {
+            omitted.push({ nombre: e.file.filename, seccion: e.section, motivo: "no es un PDF" });
+        }
+    } else {
+        selected = entries;
     }
 
-    /** Motivo común cuando un PDF queda afuera por los topes del pack (antes o después de bajarlo). */
+    const pdfs = selected.filter(isPdf);
+    const archivosNoPdf = archivos ? 0 : selected.length - pdfs.length;
+    if (!pdfs.length) {
+        throw new Error(
+            archivos
+                ? "Ninguna de las URL pedidas es un PDF: la tool une únicamente PDF."
+                : "El curso no tiene ningún PDF en sus secciones visibles.",
+        );
+    }
+
     const capMotivo = `se alcanzó el tope del pack (${MAX_PACK_FILES} archivos / ${MAX_PACK_BYTES / 1024 / 1024} MB): se puede subir con UTN_MCP_PACK_MAX_FILES / UTN_MCP_PACK_MAX_MB`;
     const inputs: { title: string; bytes: Uint8Array }[] = [];
     const kept: CourseFileEntry[] = [];
@@ -102,11 +114,7 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
     for (const entry of pdfs) {
         const name = entry.file.filename;
         if (inputs.length >= MAX_PACK_FILES || totalBytes + (entry.file.filesize ?? 0) > MAX_PACK_BYTES) {
-            omitted.push({
-                nombre: name,
-                seccion: entry.section,
-                motivo: capMotivo,
-            });
+            omitted.push({ nombre: name, seccion: entry.section, motivo: capMotivo });
             continue;
         }
         let bytes: Uint8Array;
@@ -114,11 +122,6 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             bytes = await fetchPackFile(session, downloadUrl(baseUrl, entry.file.fileurl), MAX_BYTES);
         } catch (e) {
             omitted.push({ nombre: name, seccion: entry.section, motivo: (e as Error).message });
-            continue;
-        }
-        // Excluir es por NOMBRE: si otra copia del mismo contenido tiene otro nombre, entra igual.
-        if (forceExclude.includes(name)) {
-            omitted.push({ nombre: name, seccion: entry.section, motivo: "excluido a pedido" });
             continue;
         }
         const hash = createHash("sha256").update(bytes).digest("hex");
@@ -129,25 +132,9 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
         }
         // El tamaño real se conoce recién ahora (Moodle a veces no lo anuncia): tope post-descarga.
         if (totalBytes + bytes.length > MAX_PACK_BYTES) {
-            omitted.push({
-                nombre: name,
-                seccion: entry.section,
-                motivo: capMotivo,
-            });
+            omitted.push({ nombre: name, seccion: entry.section, motivo: capMotivo });
             continue;
         }
-        if (!includeAll && !forceInclude.includes(name)) {
-            const pattern = await adminPattern(bytes, name);
-            if (pattern) {
-                omitted.push({
-                    nombre: name,
-                    seccion: entry.section,
-                    motivo: `material administrativo, no de estudio (coincidencia: "${pattern}")`,
-                });
-                continue;
-            }
-        }
-        // El hash se registra solo para lo que ENTRA: un excluido no puede volver "duplicados" a los demás.
         seen.set(hash, name);
         inputs.push({ title: name, bytes });
         kept.push(entry);
@@ -155,49 +142,28 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
     }
 
     const courseName = course?.shortname ?? `curso-${address.courseId}`;
+    const dir = exportsDir();
 
-    // Aviso por nombres pedidos que no existen en el curso: un typo no tiene que pasar en silencio.
-    const known = new Set(pdfs.map((e) => e.file.filename));
-    const avisos = [...forceInclude, ...forceExclude]
-        .filter((n) => !known.has(n))
-        .map((n) => `"${n}" no es el nombre de ningún PDF del curso`);
-
-    const materialesDe = (list: { title: string }[], entries: CourseFileEntry[]) =>
-        list.map((m, i) => ({ nombre: m.title, seccion: entries[i].section, modulo: entries[i].module }));
-
-    if (dryRun) {
-        return {
-            propuesta: true,
-            curso: course?.fullname ?? courseName,
-            incluiria: materialesDe(inputs, kept),
-            omitidos: omitted.length ? omitted : undefined,
-            avisos: avisos.length ? avisos : undefined,
-        };
+    const pack = await mergePdfs(inputs, `Apuntes de ${course?.fullname ?? courseName}`);
+    if (pack.bytes.length > MAX_FINAL_BYTES) {
+        const mb = Math.round((pack.bytes.length / 1024 / 1024) * 10) / 10;
+        throw new Error(
+            `El PDF final pesa ${mb} MB, más del máximo (${MAX_FINAL_MB} MB): no se guardó. ` +
+                "Pedí el pack con `archivos`, eligiendo solo los PDF que necesitás.",
+        );
     }
-
-    const { bytes, pages, merged, skipped } = await mergePdfs(inputs, `Apuntes de ${course?.fullname ?? courseName}`);
-    for (const s of skipped) {
+    for (const s of pack.skipped) {
         omitted.push({ nombre: kept[s.index].file.filename, seccion: kept[s.index].section, motivo: s.reason });
     }
 
-    const dir = exportsDir();
     await mkdir(dir, { recursive: true });
-    const maxFinalBytes = MAX_FINAL_MB * 1024 * 1024;
-    if (bytes.length > maxFinalBytes) {
-        const mb = Math.round((bytes.length / 1024 / 1024) * 10) / 10;
-        throw new Error(
-            `El PDF final pesa ${mb} MB, más del máximo (${MAX_FINAL_MB} MB): no se guardó. ` +
-                "Opciones: excluir archivos con `excluir` (la propuesta de `solo_listar` muestra qué entra) " +
-                "o, si el usuario acepta un PDF más pesado, subir el tope con UTN_MCP_PACK_MAX_FINAL_MB.",
-        );
-    }
-    const path = await writePackFile(dir, courseName, bytes);
+    const path = await writePackFile(dir, courseName, pack.bytes);
 
     return {
         archivo: path,
         curso: course?.fullname ?? courseName,
-        paginas: pages,
-        materiales: merged.map((m) => ({
+        paginas: pack.pages,
+        materiales: pack.merged.map((m) => ({
             nombre: m.title,
             seccion: kept[m.index].section,
             modulo: kept[m.index].module,
@@ -205,6 +171,6 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, o
             empiezaEn: m.startPage,
         })),
         omitidos: omitted.length ? omitted : undefined,
-        avisos: avisos.length ? avisos : undefined,
+        archivosNoPdf: archivosNoPdf || undefined,
     };
 }
