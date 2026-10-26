@@ -2,7 +2,6 @@ import { logger } from "../../shared/logger.js";
 import type { AutogestionCredentials } from "./connector.js";
 
 const SERVICE = "utn-mcp";
-/** Una entrada por sistema: la credencial es por sistema, no por regional (issue #22). */
 const account = (systemId: string) => `autogestion-${systemId}`;
 
 async function entry(systemId: string) {
@@ -15,7 +14,6 @@ function envNames(systemId: string): [string, string] {
     return [`${prefix}_USER`, `${prefix}_PASS`];
 }
 
-/** Primero <SISTEMA>_USER/<SISTEMA>_PASS (ej. SYSACAD_ASP_USER); si no están, el keychain. */
 export async function loadAutogestionCredentials(systemId: string): Promise<AutogestionCredentials | null> {
     const [userEnv, passEnv] = envNames(systemId);
     const username = process.env[userEnv];
@@ -31,7 +29,6 @@ export async function loadAutogestionCredentials(systemId: string): Promise<Auto
     }
 }
 
-/** Guarda en el keychain. Devuelve false si no hay keychain (ej. Linux sin Secret Service). */
 export async function saveAutogestionCredentials(
     systemId: string,
     creds: AutogestionCredentials,

@@ -1,28 +1,13 @@
 import { SysacadAspConnector } from "./sysacad-asp.js";
 
-/**
- * Un sistema de autogestión académica de una regional (Sysacad, SIU Guaraní, etc.).
- * Cada sistema es un conector que implementa esta interfaz; las regionales se enchufan
- * en `SYSTEM_BY_REGIONAL` y el conector nuevo en `SYSTEMS`. Es la "interfaz abierta"
- * del mecanismo de plugins propuesto en el issue #22: cada quien enchufa su parser.
- */
 export interface AutogestionConnector {
-    /** Id del sistema, tal como figura en `SYSTEMS`. */
     readonly systemId: string;
-    /** Pide legajo/usuario y contraseña al sistema y deja la sesión lista. */
     login(credentials: AutogestionCredentials): Promise<void>;
-    /** HTML de la página de estado académico del alumno logueado. */
     fetchEstadoAcademico(): Promise<string>;
-    /** HTML de la página de correlatividades para cursar de la carrera del alumno logueado. */
     fetchCorrelatividades(): Promise<string>;
-    /**
-     * HTML de la página de correlatividades para rendir, si el sistema las publica aparte
-     * (Sysacad sí: correlatividadCursado.asp y correlatividadExamen.asp son páginas distintas).
-     */
     fetchCorrelatividadesExamen?(): Promise<string>;
 }
 
-/** Credenciales de un sistema de autogestión. En Sysacad `username` es el legajo. */
 export interface AutogestionCredentials {
     username: string;
     password: string;
@@ -53,7 +38,6 @@ export class UnsupportedRegionalError extends Error {
     }
 }
 
-/** Qué se sabe del conector: `verified` = alguien entró con una cuenta real; `unverified` = falta esa prueba. */
 export type SystemSupport = "verified" | "unverified";
 
 export interface AutogestionSystem {
@@ -63,15 +47,10 @@ export interface AutogestionSystem {
     create(): AutogestionConnector;
 }
 
-/**
- * Qué sistema de autogestión usa cada regional. Es la resolución dinámica del issue #22:
- * cada regional enchufa el suyo y el MCP no le impone al usuario un sistema que no usa.
- */
 const SYSTEM_BY_REGIONAL: Record<string, string> = {
     frt: "sysacad-asp",
 };
 
-/** Los conectores que existen hoy. Referencia: `sysacad-asp` (FRT); un Guaraní iría acá al lado. */
 export const SYSTEMS: Record<string, AutogestionSystem> = {
     "sysacad-asp": {
         id: "sysacad-asp",
@@ -81,13 +60,11 @@ export const SYSTEMS: Record<string, AutogestionSystem> = {
     },
 };
 
-/** El sistema de una regional, o null si todavía nadie enchufó su conector. */
 export function systemForRegional(regionalId: string): AutogestionSystem | null {
     const systemId = SYSTEM_BY_REGIONAL[regionalId];
     return (systemId && SYSTEMS[systemId]) || null;
 }
 
-/** Registro perezoso para no cargar clientes que la regional del usuario no usa. */
 export function registerSystem(system: AutogestionSystem): void {
     SYSTEMS[system.id] = system;
 }
