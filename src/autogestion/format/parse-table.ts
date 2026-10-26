@@ -4,7 +4,8 @@ import { htmlToText } from "../../shared/html.js";
  * Parser tolerante de las tablas de SysacadWEB: HTML 4.01 a puro <table>/<td>, sin clases
  * estables. Se usa la fila de encabezados para ubicar columnas por nombre, y si no hay
  * encabezado reconocible se devuelven las filas crudas para que el modelo las lea.
- * La estructura exacta de cada página se confirma con el primer login real (issue #22);
+ * Verificado con cuenta real (oct 2026): la primera fila es un título de una celda
+ * ("Estado académico de <alumno> al <fecha>") y la segunda trae las columnas de verdad;
  * el parser no inventa columnas que no vio.
  */
 export interface ParsedTable {
@@ -25,7 +26,12 @@ export function parseTables(html: string): ParsedTable[] {
             );
             if (cells.length > 0) rows.push(cells);
         }
-        if (rows.length > 1) tables.push({ headers: rows[0], rows: rows.slice(1) });
+        // Si la primera fila es un título (menos celdas que la que sigue), el encabezado es la segunda.
+        if (rows.length > 2 && rows[0].length < rows[1].length) {
+            tables.push({ headers: rows[1], rows: rows.slice(2) });
+        } else if (rows.length > 1) {
+            tables.push({ headers: rows[0], rows: rows.slice(1) });
+        }
     }
     return tables;
 }
