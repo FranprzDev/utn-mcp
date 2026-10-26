@@ -50,6 +50,8 @@ export async function callWs<T>(
 /**
  * Baja un archivo de `webservice/pluginfile.php` con el token; lo renueva una vez si venció.
  * Los errores llegan como JSON (`{ error, errorcode }`) en lugar del archivo.
+ * Los redirects se siguen a mano y SOLO al propio aula y a rutas de archivos (pluginfile):
+ * un pluginfile legítimo no redirige afuera, así que cualquier otro destino se rechaza.
  */
 export async function fetchFile(
     session: AulaSession,
@@ -57,22 +59,49 @@ export async function fetchFile(
     maxBytes: number,
 ): Promise<{ bytes: Uint8Array; contentType: string | null }> {
     let token = await session.getToken();
+    const { baseUrl } = await session.getRegional();
+    const aulaOrigin = new URL(baseUrl).origin;
+    let current = url;
+    let redirects = 0;
+    // Aparte de los redirects: uno antes del token vencido no tiene que gastar la renovación.
+    let refreshed = false;
 
-    for (let attempt = 0; ; attempt++) {
-        const withToken = new URL(url);
+    for (;;) {
+        const withToken = new URL(current);
         withToken.searchParams.set("token", token);
 
         let res: Response;
         try {
-            res = await fetch(withToken, { signal: AbortSignal.timeout(60_000) });
+            res = await fetch(withToken, { signal: AbortSignal.timeout(60_000), redirect: "manual" });
         } catch (e) {
             throw new MoodleError(`No se pudo bajar el archivo: ${(e as Error).message}`);
+        }
+
+        if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get("location");
+            const next = location ? new URL(location, current) : null;
+            redirects++;
+            if (
+                redirects > 3 ||
+                !next ||
+                next.username ||
+                next.password ||
+                next.origin !== aulaOrigin ||
+                !next.pathname.includes("pluginfile.php")
+            ) {
+                throw new MoodleError(
+                    `El aula redirigió la descarga a una dirección no permitida (${location ?? "sin destino"})`,
+                );
+            }
+            current = next;
+            continue;
         }
 
         const contentType = res.headers.get("content-type");
         if (contentType?.startsWith("application/json")) {
             const data = (await res.json()) as { error?: string; errorcode?: string };
-            if (attempt === 0 && data.errorcode && TOKEN_ERRORS.has(data.errorcode)) {
+            if (!refreshed && data.errorcode && TOKEN_ERRORS.has(data.errorcode)) {
+                refreshed = true;
                 token = await session.refreshToken();
                 continue;
             }

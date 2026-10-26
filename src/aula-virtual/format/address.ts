@@ -3,6 +3,15 @@
  * y devuelve tal cual para entrar ahí. No hay estado en el servidor; la dirección
  * dice todo lo necesario, y el padre se deduce del texto (eso es el "volver").
  */
+export const AddressLevel = {
+    Root: "root",
+    Course: "course",
+    Module: "module",
+    Discussion: "discussion",
+} as const;
+
+export type AddressLevel = (typeof AddressLevel)[keyof typeof AddressLevel];
+
 export type Address =
     | { level: "root" }
     | { level: "course"; courseId: number }

@@ -2,6 +2,7 @@ import { callWs, MoodleError } from "./moodle-api.js";
 import type { AulaSession } from "./session.js";
 import type {
     Assignment,
+    CourseModuleContent,
     AssignSubmissionStatus,
     Choice,
     ChoiceOption,
@@ -44,6 +45,32 @@ export function getCourseSections(session: AulaSession, courseId: number, cmid?:
         params["options[0][value]"] = cmid;
     }
     return callWs<CourseSection[]>(session, "core_course_get_contents", params);
+}
+
+/** Un archivo de un curso, con dónde está: en qué sección y en qué módulo. */
+export interface CourseFileEntry {
+    section: string;
+    module: string;
+    file: CourseModuleContent;
+}
+
+/**
+ * Los archivos de las secciones y módulos visibles del curso, en el orden en que aparecen en el aula.
+ * Los mismos filtros de visibilidad que el mapa del curso de format/navigate.
+ */
+export async function getCourseFiles(session: AulaSession, courseId: number): Promise<ReadonlyArray<CourseFileEntry>> {
+    const sections = await getCourseSections(session, courseId);
+    const entries: CourseFileEntry[] = [];
+    for (const section of sections) {
+        if (section.uservisible === false) continue;
+        for (const module of section.modules) {
+            if (!module.uservisible) continue;
+            for (const content of module.contents ?? []) {
+                if (content.type === "file") entries.push({ section: section.name, module: module.name, file: content });
+            }
+        }
+    }
+    return entries;
 }
 
 // --- Foros ---

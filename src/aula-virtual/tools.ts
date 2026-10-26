@@ -13,6 +13,7 @@ import {
 } from "./format/actions.js";
 import { ROOT } from "./format/address.js";
 import { readAulaFile } from "./format/files.js";
+import { buildStudyPack } from "./format/study-pack.js";
 import { open } from "./format/navigate.js";
 import { createUploadLink, submitAssignment } from "./format/submission.js";
 
@@ -165,6 +166,52 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
             }
         },
     );
+
+    // El pack se guarda en el disco: solo en STDIO, donde el servidor corre en la compu del usuario.
+    if (files.local) {
+        server.registerTool(
+            "aula_study_pack",
+            {
+                description:
+                    "Une PDF del aula en un solo compilado de estudio con índice clickeable (cada " +
+                    "entrada abre la página donde empieza ese material, y cada página tiene arriba " +
+                    "un enlace para volver), guardado en la compu del usuario. Une ÚNICAMENTE PDF; " +
+                    "si una URL pedida no es PDF, queda en `omitidos` con el motivo.\n\n" +
+                    "Conviene llamar antes a aula_open del curso: devuelve cada módulo con sus " +
+                    "archivos (nombre, url, sección y tipo) y permite elegir los apuntes sin bajar " +
+                    "nada. Es un compilado íntegro, no un resumen.\n\n" +
+                    "Hay topes por memoria: 150 archivos, 300 MB de descarga total y 30 MB el PDF " +
+                    "final (estimado con los tamaños de entrada, para no bajar archivos de más). Lo " +
+                    "que no entra queda en `omitidos` con el motivo: se pide el resto en otro pack. " +
+                    "La respuesta trae la ruta en `archivo` y `materiales` con sección, módulo, " +
+                    "páginas y página de inicio de cada uno.\n\n" +
+                    "La `direccion` del curso sale de aula_list_courses. Para leer o pasarle al " +
+                    "usuario archivos que no son PDF, usá aula_open y aula_read_file.",
+                inputSchema: z.object({
+                    direccion: z
+                        .string()
+                        .describe('Dirección del curso, de aula_list_courses. Ej: "/curso/691".'),
+                    archivos: z
+                        .array(z.string())
+                        .optional()
+                        .describe(
+                            "URL de los PDF a unir, tal como las devuelve aula_open del curso (conviene " +
+                                "llamarlo antes y elegir: cada archivo trae nombre, sección y tipo). El pack " +
+                                "sigue el orden del aula, no el de esta lista. Sin `archivos`, une todos los " +
+                                "PDF del curso.",
+                        ),
+                }),
+                annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+            },
+            async ({ direccion, archivos }) => {
+                try {
+                    return json(await buildStudyPack(session, direccion, archivos));
+                } catch (e) {
+                    return failure(e);
+                }
+            },
+        );
+    }
 
     // --- Escritura: lo que sigue cambia algo en el aula, y casi todo queda a la vista de otras personas. ---
 
