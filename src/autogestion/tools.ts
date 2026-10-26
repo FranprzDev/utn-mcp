@@ -3,6 +3,7 @@ import { systemForRegional } from "./client/connector.js";
 import type { AutogestionSession } from "./client/session.js";
 import { getCorrelatividades } from "./format/correlatividades.js";
 import { getEstadoAcademico } from "./format/estado-academico.js";
+import { getExamenes } from "./format/examenes.js";
 import { getCursandoAhora } from "./format/notas-parciales.js";
 
 const json = (data: unknown) => ({
@@ -45,8 +46,9 @@ export function registerAutogestionTools(
         {
             description:
                 "Estado académico del usuario según la autogestión de su regional: cada materia OBLIGATORIA " +
-                "del plan con su estado (regular, aprobada, libre), plan, nota y fecha (las electivas no salen " +
-                "en esta página del sistema). Las que se están cursando se marcan como Cursando cruzando con " +
+                "del plan con su estado (regular, aprobada, libre), plan, nota y fecha (no es el catálogo " +
+                "completo de la carrera: cubre las obligatorias y puede incluir electivas ya aprobadas). " +
+                "Las que se están cursando se marcan como Cursando cruzando con " +
                 "las notas de parciales, que en Sysacad son las que tienen horarios cargados. Requiere " +
                 "`utn-mcp login autogestion` una vez; las credenciales son las del sistema de autogestión, " +
                 "que no siempre son las del aula virtual.",
@@ -74,6 +76,25 @@ export function registerAutogestionTools(
         async () => {
             try {
                 return json(await getCursandoAhora(session));
+            } catch (e) {
+                return failure(e);
+            }
+        },
+    );
+
+    server.registerTool(
+        "autogestion_examenes",
+        {
+            description:
+                "Historial de exámenes finales del usuario según la autogestión de su regional: fecha, " +
+                "materia, nota (en letras, o estados como Ausen./Insc. cuando todavía no hay nota), plan y " +
+                "código. Cubre también materias rendidas en planes anteriores y electivas que el estado " +
+                "académico no muestra. Requiere `utn-mcp login autogestion` una vez.",
+            annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async () => {
+            try {
+                return json(await getExamenes(session));
             } catch (e) {
                 return failure(e);
             }
