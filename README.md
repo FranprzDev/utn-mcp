@@ -31,7 +31,7 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_calendar_add_event` | Agrega un recordatorio a tu calendario del aula. |
 | `autogestion_sistema` | Qué sistema de autogestión usa tu regional (Sysacad, SIU Guaraní, etc.) y si el conector ya está verificado. Solo en modo local. |
 | `autogestion_estado_academico` | Tu estado académico según la autogestión de tu regional: cada materia con su estado, plan, nota y fecha. Requiere `utn-mcp login autogestion`. Solo en modo local. |
-| `autogestion_correlatividades` | Las correlatividades de tu carrera según la autogestión, en vez de datos fijos del repo. Requiere `utn-mcp login autogestion`. Solo en modo local. |
+| `autogestion_correlatividades` | Las correlatividades de tu carrera según la autogestión, para cursar y para rendir, en vez de datos fijos del repo. Requiere `utn-mcp login autogestion`. Solo en modo local. |
 
 Al abrir una tarea, `aula_open` muestra si la entregaste, cuándo vence y la devolución con la nota. Las tools que escriben le piden al agente que te muestre lo que va a hacer y espere tu confirmación.
 

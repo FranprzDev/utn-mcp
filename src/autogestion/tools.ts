@@ -63,9 +63,11 @@ export function registerAutogestionTools(
         "autogestion_correlatividades",
         {
             description:
-                "Correlatividades de la carrera del usuario según la autogestión de su regional: para cada " +
-                "materia, qué exige tener regular o aprobada. Es la fuente dinámica de correlatividades: usala " +
-                "en lugar de suponer datos de un plan fijo. Requiere `utn-mcp login autogestion` una vez.",
+                "Correlatividades de la carrera del usuario según la autogestión de su regional, separadas " +
+                "para cursar y para rendir cuando el sistema las distingue (Sysacad las publica en dos " +
+                "páginas): para cada materia, qué exige tener regular o aprobada. Es la fuente dinámica de " +
+                "correlatividades: usala en lugar de suponer datos de un plan fijo. Requiere " +
+                "`utn-mcp login autogestion` una vez.",
             annotations: { readOnlyHint: true, openWorldHint: false },
         },
         async () => {
