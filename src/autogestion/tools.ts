@@ -3,6 +3,7 @@ import { systemForRegional } from "./client/connector.js";
 import type { AutogestionSession } from "./client/session.js";
 import { getCorrelatividades } from "./format/correlatividades.js";
 import { getEstadoAcademico } from "./format/estado-academico.js";
+import { getCursandoAhora } from "./format/notas-parciales.js";
 
 const json = (data: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data) }],
@@ -43,8 +44,10 @@ export function registerAutogestionTools(
         "autogestion_estado_academico",
         {
             description:
-                "Estado académico del usuario según la autogestión de su regional: cada materia con su estado " +
-                "(regular, aprobada, libre), plan, nota y fecha, tal como los publica el sistema. Requiere " +
+                "Estado académico del usuario según la autogestión de su regional: cada materia OBLIGATORIA " +
+                "del plan con su estado (regular, aprobada, libre), plan, nota y fecha (las electivas no salen " +
+                "en esta página del sistema). Las que se están cursando se marcan como Cursando cruzando con " +
+                "las notas de parciales, que en Sysacad son las que tienen horarios cargados. Requiere " +
                 "`utn-mcp login autogestion` una vez; las credenciales son las del sistema de autogestión, " +
                 "que no siempre son las del aula virtual.",
             annotations: { readOnlyHint: true, openWorldHint: false },
@@ -52,6 +55,25 @@ export function registerAutogestionTools(
         async () => {
             try {
                 return json(await getEstadoAcademico(session));
+            } catch (e) {
+                return failure(e);
+            }
+        },
+    );
+
+    server.registerTool(
+        "autogestion_cursando_ahora",
+        {
+            description:
+                "Materias que el usuario está cursando ahora según la autogestión de su regional: en Sysacad " +
+                "son las que tienen horarios cargados en la página de notas de parciales, y salen con su " +
+                "comisión, aula y horarios. Incluye electivas, a diferencia del estado académico. Requiere " +
+                "`utn-mcp login autogestion` una vez.",
+            annotations: { readOnlyHint: true, openWorldHint: false },
+        },
+        async () => {
+            try {
+                return json(await getCursandoAhora(session));
             } catch (e) {
                 return failure(e);
             }

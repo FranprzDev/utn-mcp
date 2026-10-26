@@ -6,6 +6,7 @@ export interface AutogestionConnector {
     fetchEstadoAcademico(): Promise<string>;
     fetchCorrelatividades(): Promise<string>;
     fetchCorrelatividadesExamen?(): Promise<string>;
+    fetchNotasParciales?(): Promise<string>;
 }
 
 export interface AutogestionCredentials {
