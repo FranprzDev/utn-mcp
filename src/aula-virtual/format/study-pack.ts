@@ -22,7 +22,7 @@ const capFromEnv = (raw: string | undefined, fallback: number): number => {
 };
 const MAX_PACK_FILES = capFromEnv(process.env.UTN_MCP_PACK_MAX_FILES, 150);
 const MAX_PACK_BYTES = capFromEnv(process.env.UTN_MCP_PACK_MAX_MB, 300) * 1024 * 1024;
-/** Máximo del PDF final: se estima con los tamaños de entrada ANTES de bajar todo el curso. */
+/** Máximo del PDF final: se estima con los tamaños de entrada para cortar antes de bajar todo. */
 const MAX_FINAL_MB = capFromEnv(process.env.UTN_MCP_PACK_MAX_FINAL_MB, 30);
 const MAX_FINAL_BYTES = MAX_FINAL_MB * 1024 * 1024;
 
@@ -111,8 +111,17 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
     const kept: CourseFileEntry[] = [];
     const seen = new Map<string, string>(); // hash -> nombre del primero con ese contenido
     let totalBytes = 0;
+    let finalLleno = false;
     for (const entry of pdfs) {
         const name = entry.file.filename;
+        if (finalLleno) {
+            omitted.push({
+                nombre: name,
+                seccion: entry.section,
+                motivo: `el PDF final llegó al tope de ${MAX_FINAL_MB} MB (estimado con los tamaños de entrada)`,
+            });
+            continue;
+        }
         if (inputs.length >= MAX_PACK_FILES || totalBytes + (entry.file.filesize ?? 0) > MAX_PACK_BYTES) {
             omitted.push({ nombre: name, seccion: entry.section, motivo: capMotivo });
             continue;
@@ -135,6 +144,17 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
             omitted.push({ nombre: name, seccion: entry.section, motivo: capMotivo });
             continue;
         }
+        // Corte temprano del tope del PDF final, estimado con los tamaños de entrada: lo que ya
+        // no puede entrar no se baja al pedo ni tira abajo el pack entero al final.
+        if (totalBytes + bytes.length > MAX_FINAL_BYTES) {
+            finalLleno = true;
+            omitted.push({
+                nombre: name,
+                seccion: entry.section,
+                motivo: `el PDF final llegó al tope de ${MAX_FINAL_MB} MB (estimado con los tamaños de entrada)`,
+            });
+            continue;
+        }
         seen.set(hash, name);
         inputs.push({ title: name, bytes });
         kept.push(entry);
@@ -144,7 +164,20 @@ export async function buildStudyPack(session: AulaSession, rawAddress: string, a
     const courseName = course?.shortname ?? `curso-${address.courseId}`;
     const dir = exportsDir();
 
-    const pack = await mergePdfs(inputs, `Apuntes de ${course?.fullname ?? courseName}`);
+    // La estimación puede quedar corta (el índice y los enlaces agregan páginas): si el unido
+    // supera el tope igual, salen los últimos materiales hasta que entre, en vez de tirar todo
+    // el trabajo de descarga.
+    let pack = await mergePdfs(inputs, `Apuntes de ${course?.fullname ?? courseName}`);
+    while (pack.bytes.length > MAX_FINAL_BYTES && inputs.length > 1) {
+        inputs.pop();
+        const entry = kept.pop()!;
+        omitted.push({
+            nombre: entry.file.filename,
+            seccion: entry.section,
+            motivo: `el PDF final superó el tope de ${MAX_FINAL_MB} MB al unir`,
+        });
+        pack = await mergePdfs(inputs, `Apuntes de ${course?.fullname ?? courseName}`);
+    }
     if (pack.bytes.length > MAX_FINAL_BYTES) {
         const mb = Math.round((pack.bytes.length / 1024 / 1024) * 10) / 10;
         throw new Error(
