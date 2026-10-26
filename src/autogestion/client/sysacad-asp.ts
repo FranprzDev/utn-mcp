@@ -22,8 +22,13 @@ const LOGIN_PATH = "menuAlumno.asp";
 /** Marcadores de la home de login: si una respuesta los trae, la sesión no quedó o venció. */
 const LOGIN_PAGE_MARKERS = ["Ingreso Alumnos al SYSACAD", 'NAME="login"'];
 
-/** Marcador de credenciales rechazadas: SysacadWEB avisa con la clase textoError de su CSS. */
-const LOGIN_ERROR_MARKER = "textoError";
+/**
+ * Marcador de credenciales rechazadas: SysacadWEB avisa con un <p class="textoError"> en el cuerpo.
+ * Ojo: el nombre de la clase también aparece en la definición del <style> de todas las páginas,
+ * así que hay que buscarlo fuera de los bloques <style> o cuenta como falso positivo (oct 2026:
+ * un login exitoso "rechazaba" por esto).
+ */
+const LOGIN_ERROR_PATTERN = /<p class="textoError">/i;
 
 /** La sesión viaja en la URL: `menuAlumno_FRT.asp?id=30043-986741068` y todas las internas igual. */
 const SESSION_ID_PATTERN = /[?&]id=(\d+-\d+)/;
@@ -33,11 +38,16 @@ function decode(buffer: ArrayBuffer): string {
     return new TextDecoder("iso-8859-1").decode(buffer);
 }
 
-/** Conector del SysacadWEB (ASP) de la FRT. La sesión es el `id` de la URL, no una cookie. */
+/**
+ * Conector del SysacadWEB (ASP) de la FRT. La sesión es el `id` de la URL MÁS la cookie
+ * ASPSESSIONID del login: sin cookie las páginas internas redirigen al login (verificado
+ * con cuenta real, oct 2026).
+ */
 export class SysacadAspConnector implements AutogestionConnector {
     readonly systemId = "sysacad-asp";
 
     private sessionId: string | null = null;
+    private sessionCookie: string | null = null;
     private menuHtml: string | null = null;
 
     async login(credentials: AutogestionCredentials): Promise<void> {
@@ -58,16 +68,22 @@ export class SysacadAspConnector implements AutogestionConnector {
             throw new HttpError(`No se pudo conectar con ${new URL(BASE_URL).host}: ${(e as Error).message}`);
         }
         const html = decode(await res.arrayBuffer());
-        if (html.includes(LOGIN_ERROR_MARKER)) throw new InvalidCredentialsError("Sysacad");
+        // Primero la sesión: un login exitoso también trae la palabra textoError en su <style>.
         const sessionId = SESSION_ID_PATTERN.exec(html)?.[1];
         if (!sessionId) {
+            // El rechazo real es un <p class="textoError">ERROR: ...</p> en el cuerpo, sin sesión.
             // Sin error explícito pero sin sesión: SysacadWEB a veces reimprime la home ante un rechazo.
-            if (LOGIN_PAGE_MARKERS.some((m) => html.includes(m))) {
+            if (LOGIN_ERROR_PATTERN.test(html) || LOGIN_PAGE_MARKERS.some((m) => html.includes(m))) {
                 throw new InvalidCredentialsError("Sysacad");
             }
             throw new HttpError("Sysacad no devolvió sesión y no es la página de login: cambió la pantalla de ingreso.");
         }
         this.sessionId = sessionId;
+        // La cookie de sesión ASP acompaña todas las internas; sin ella el `id` solo no alcanza.
+        this.sessionCookie = res.headers
+            .getSetCookie()
+            .map((c) => c.split(";")[0])
+            .join("; ");
         this.menuHtml = html;
     }
 
@@ -109,7 +125,10 @@ export class SysacadAspConnector implements AutogestionConnector {
         if (!url.searchParams.get("id")) url.searchParams.set("id", this.sessionId);
         let res: Response;
         try {
-            res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+            res = await fetch(url, {
+                headers: this.sessionCookie ? { cookie: this.sessionCookie } : {},
+                signal: AbortSignal.timeout(30_000),
+            });
         } catch (e) {
             throw new HttpError(`No se pudo conectar con ${url.host}: ${(e as Error).message}`);
         }
@@ -117,6 +136,7 @@ export class SysacadAspConnector implements AutogestionConnector {
         if (LOGIN_PAGE_MARKERS.some((m) => html.includes(m))) {
             // Sesión vencida: una sola marca para que la tool decida re-loguear una vez, como refreshToken.
             this.sessionId = null;
+            this.sessionCookie = null;
             throw new LoginRequiredError("Sysacad");
         }
         return html;

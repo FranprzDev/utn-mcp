@@ -5,8 +5,10 @@ import { columnIndex, tableWithHeaders } from "./parse-table.js";
 /** Una materia con las correlativas que exige, tal como las publica la autogestión. */
 export interface CorrelatividadMateria {
     materia: string;
-    /** Texto de la columna de correlativas, tal cual viene: "X e Y regulares", "Z aprobada", etc. */
+    /** Texto de la columna de correlativas, tal cual viene: "Puede cursar", "No aprobó X", etc. */
     correlativas: string;
+    plan?: string;
+    anio?: string;
     extra?: string[];
 }
 
@@ -26,12 +28,16 @@ export async function getCorrelatividades(session: AutogestionSession): Promise<
     }
     const materia = columnIndex(table, "materia");
     const correlativas = columnIndex(table, "correlatividad");
-    const known = new Set([materia, correlativas].filter((i) => i >= 0));
+    const plan = columnIndex(table, "plan");
+    const anio = columnIndex(table, "año");
+    const known = new Set([materia, correlativas, plan, anio].filter((i) => i >= 0));
     return table.rows.map((cells) => {
         const entry: CorrelatividadMateria = {
             materia: cells[materia] ?? "",
             correlativas: cells[correlativas] ?? "",
         };
+        if (plan >= 0) entry.plan = cells[plan] || undefined;
+        if (anio >= 0) entry.anio = cells[anio] || undefined;
         const extra = cells.filter((_, i) => !known.has(i) && cells[i]);
         if (extra.length > 0) entry.extra = extra;
         return entry;

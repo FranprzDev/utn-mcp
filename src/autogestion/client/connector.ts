@@ -72,8 +72,8 @@ export const SYSTEMS: Record<string, AutogestionSystem> = {
     "sysacad-asp": {
         id: "sysacad-asp",
         name: "SYSACAD (ASP clásico, FRT)",
-        // El formulario de login está verificado públicamente; falta la prueba con una cuenta real.
-        support: "unverified",
+        // Verificado con una cuenta real de FRT (oct 2026): login, estado académico y correlatividades.
+        support: "verified",
         create: () => new SysacadAspConnector(),
     },
 };
