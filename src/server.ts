@@ -8,9 +8,6 @@ import type { FileSource } from "./shared/uploads.js";
 /**
  * Un servidor MCP para un usuario. Las entradas STDIO y HTTP lo crean por conexión o por request.
  * `files`: de dónde salen los archivos que el usuario sube a una plataforma.
- * `getRegionalId`: cómo se sabe la regional del usuario; sin ella no se registran las tools de
- * autogestión (hoy solo STDIO la resuelve: en HTTP las credenciales por sistema de cada usuario
- * todavía no tienen dónde guardarse).
  */
 export function createServer(
     aula: AulaSession,

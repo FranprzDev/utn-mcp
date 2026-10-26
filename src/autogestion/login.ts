@@ -3,11 +3,6 @@ import { logger } from "../shared/logger.js";
 import { systemForRegional, UnsupportedRegionalError } from "./client/connector.js";
 import { saveAutogestionCredentials } from "./client/credentials.js";
 
-/**
- * `utn-mcp login autogestion`: pide legajo/usuario y contraseña del sistema de autogestión de la
- * regional del usuario, los prueba contra el sistema y recién ahí los guarda en el keychain.
- * Es la "credencial por sistema, pedida al primer uso" del mecanismo de conectores (issue #22).
- */
 export async function runAutogestionLogin(regionalId: string): Promise<void> {
     const system = systemForRegional(regionalId);
     if (!system) throw new UnsupportedRegionalError(regionalId);

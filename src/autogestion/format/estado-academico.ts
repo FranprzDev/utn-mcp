@@ -2,7 +2,6 @@ import { HttpError } from "../../shared/http.js";
 import type { AutogestionSession } from "../client/session.js";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
-/** Una materia del estado académico, con lo que el sistema informa de ella. */
 export interface EstadoMateria {
     materia: string;
     estado?: string;
@@ -10,14 +9,9 @@ export interface EstadoMateria {
     anio?: string;
     nota?: string;
     fecha?: string;
-    /** Celdas que no entraron en una columna conocida: no se tira información. */
     extra?: string[];
 }
 
-/**
- * Estado académico del alumno en su autogestión: la tabla cuyo encabezado nombra materia y estado.
- * El mapeo de columnas sigue los encabezados reales de la página; lo que no matchea queda en `extra`.
- */
 export async function getEstadoAcademico(session: AutogestionSession): Promise<EstadoMateria[]> {
     const connector = await session.getConnector();
     const html = await connector.fetchEstadoAcademico();
