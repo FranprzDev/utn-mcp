@@ -28,6 +28,7 @@ function decode(buffer: ArrayBuffer): string {
 export class SysacadAspConnector implements AutogestionConnector {
     readonly systemId = "sysacad-asp";
 
+    private credentials: AutogestionCredentials | null = null;
     private sessionId: string | null = null;
     private sessionCookie: string | null = null;
     private menuHtml: string | null = null;
@@ -57,6 +58,7 @@ export class SysacadAspConnector implements AutogestionConnector {
             }
             throw new HttpError("Sysacad no devolvió sesión y no es la página de login: cambió la pantalla de ingreso.");
         }
+        this.credentials = credentials;
         this.sessionId = sessionId;
         this.sessionCookie = res.headers
             .getSetCookie()
@@ -113,7 +115,11 @@ export class SysacadAspConnector implements AutogestionConnector {
         return this.fetchLinkedPage(/^ex[aá]menes$/i, "exámenes");
     }
 
-    private async fetchLinkedPage(linkText: RegExp, label: string): Promise<string> {
+    private async fetchLinkedPage(linkText: RegExp, label: string, retry = true): Promise<string> {
+        if (!this.sessionId && this.credentials) {
+            await this.login(this.credentials);
+            retry = false;
+        }
         if (!this.sessionId || !this.menuHtml) throw new LoginRequiredError("Sysacad");
         const href = this.findMenuLink(this.menuHtml, linkText);
         if (!href) {
@@ -124,7 +130,13 @@ export class SysacadAspConnector implements AutogestionConnector {
                 `No encontré "${label}" en el menú de Sysacad. Opciones que muestra: ${options.join(", ")}.`,
             );
         }
-        return this.fetchPage(href);
+        try {
+            return await this.fetchPage(href);
+        } catch (error) {
+            if (!(error instanceof LoginRequiredError) || !retry || !this.credentials) throw error;
+            await this.login(this.credentials);
+            return this.fetchLinkedPage(linkText, label, false);
+        }
     }
 
     private async fetchPage(href: string): Promise<string> {
