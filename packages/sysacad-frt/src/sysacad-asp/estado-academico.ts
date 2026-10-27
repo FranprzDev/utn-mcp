@@ -1,5 +1,5 @@
-import { HttpError } from "../../../shared/http.js";
-import type { EstadoMateria } from "../types.js";
+import { HttpError } from "utn-mcp/autogestion";
+import type { EstadoMateria } from "utn-mcp/autogestion";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
 export function parseEstadoAcademico(html: string): EstadoMateria[] {

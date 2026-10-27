@@ -1,5 +1,5 @@
-import { HttpError } from "../../../shared/http.js";
-import type { NotasParcialesMateria } from "../types.js";
+import { HttpError } from "utn-mcp/autogestion";
+import type { NotasParcialesMateria } from "utn-mcp/autogestion";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
 export function normalizarMateria(nombre: string): string {

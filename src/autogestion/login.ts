@@ -1,10 +1,11 @@
+import { loadInstalledSystems } from "./client/installed-systems.js";
 import { ask, askHidden } from "../shared/input.js";
 import { logger } from "../shared/logger.js";
 import { systemForRegional, UnsupportedRegionalError } from "./client/connector.js";
 import { saveAutogestionCredentials } from "./client/credentials.js";
 
 export async function runAutogestionLogin(regionalId: string): Promise<void> {
-    const system = systemForRegional(regionalId);
+    const system = systemForRegional(regionalId, await loadInstalledSystems());
     if (!system) throw new UnsupportedRegionalError(regionalId);
 
     const username = (await ask("Legajo o usuario de la autogestión: ")).trim();

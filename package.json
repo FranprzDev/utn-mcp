@@ -55,5 +55,12 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "exports": {
+    ".": "./build/index.js",
+    "./autogestion": {
+      "types": "./build/autogestion/client/connector.d.ts",
+      "default": "./build/autogestion/client/connector.js"
+    }
   }
 }

@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/server";
-import { systemForRegional } from "./client/connector.js";
+import { systemForRegional, type AutogestionSystem } from "./client/connector.js";
 import type { AutogestionSession } from "./client/session.js";
 import { getCorrelatividades } from "./format/correlatividades.js";
 import { getEstadoAcademico } from "./format/estado-academico.js";
@@ -19,6 +19,7 @@ export function registerAutogestionTools(
     server: McpServer,
     session: AutogestionSession,
     getRegionalId: () => Promise<string>,
+    systems: () => Promise<AutogestionSystem[]>,
 ) {
     server.registerTool(
         "autogestion_sistema",
@@ -32,9 +33,9 @@ export function registerAutogestionTools(
         async () => {
             try {
                 const regionalId = await getRegionalId();
-                const system = systemForRegional(regionalId);
-                if (!system) return json({ regional: regionalId, sistema: null });
-                return json({ regional: regionalId, sistema: system.id, nombre: system.name, soporte: system.support });
+                const system = systemForRegional(regionalId, await systems());
+                if (!system) return json({ regional: regionalId, sistema: null, mensaje: "No hay conector instalado y configurado para esta regional. Instalá el tuyo y agregalo a UTN_MCP_CONNECTORS." });
+                return json({ regional: regionalId, sistema: system.id, nombre: system.name, soporte: system.support, regionales: system.regionales });
             } catch (e) {
                 return failure(e);
             }

@@ -13,6 +13,27 @@ Este es el Model Context Protocol server NO OFICIAL de la UTN. Con él podés pe
 
 El agente recorre el aula como lo harías vos: entra al curso, mira los foros y abre los archivos que hagan falta.
 
+## Optional autogestion connectors
+
+Autogestion connectors are separate packages. The core does not include or download Sysacad FRT. Moodle works without any connector.
+
+This branch includes the FRT package under `packages/sysacad-frt`. These core changes are not released, and the FRT package is not published to npm. To try the checkout locally:
+
+```sh
+npm ci
+npm run build
+npm install --prefix packages/sysacad-frt --no-save --package-lock=false --ignore-scripts .
+npm run build --prefix packages/sysacad-frt
+npm install --no-save --package-lock=false --ignore-scripts --legacy-peer-deps ./packages/sysacad-frt
+export UTN_MCP_CONNECTORS=utn-mcp-sysacad-frt
+node build/index.js login autogestion
+node build/index.js
+```
+
+Run from this checkout so package resolution uses its installed dependencies. The connector exports `ConnectorsSystem = { "sysacad-asp": ["frt"] }`: only Tucuman's classic ASP Sysacad, not sysacad2 or another regional. A future connector exports the same `AutogestionSystem` contract from `utn-mcp/autogestion`, including its own system ID and regional list, without changing the core.
+
+`UTN_MCP_CONNECTORS` is a comma-separated list of trusted installed package names. Loading a connector executes that package's code; configure only packages you trust. Nothing is installed automatically. `autogestion_sistema` reports the selected regional, installed system and supported regionals. Without a matching installed connector it reports that absence, not a claim that no connector exists elsewhere. Duplicate systems or regional claims are rejected. Credentials and sessions stay per system, locally; HTTP autogestion is still unsupported.
+
 ## Tools
 | Tool | Qué hace |
 |---|---|

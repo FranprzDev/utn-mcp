@@ -1,11 +1,11 @@
-import { HttpError } from "../../shared/http.js";
+import { HttpError } from "utn-mcp/autogestion";
 import {
     InvalidCredentialsError,
     LoginRequiredError,
     type AutogestionConnector,
     type AutogestionCredentials,
-} from "./connector.js";
-import type { Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "./types.js";
+} from "utn-mcp/autogestion";
+import type { Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "utn-mcp/autogestion";
 import { parseCorrelatividadesPagina } from "./sysacad-asp/correlatividades.js";
 import { parseEstadoAcademico } from "./sysacad-asp/estado-academico.js";
 import { parseExamenes } from "./sysacad-asp/examenes.js";
