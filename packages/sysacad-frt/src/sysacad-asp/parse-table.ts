@@ -1,4 +1,4 @@
-import { htmlToText } from "../../../shared/html.js";
+import { htmlToText } from "utn-mcp/autogestion";
 
 export interface ParsedTable {
     headers: string[];

@@ -1,4 +1,3 @@
-import { SysacadAspConnector } from "./sysacad-asp.js";
 import type { Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "./types.js";
 
 export interface AutogestionConnector {
@@ -32,9 +31,9 @@ export class InvalidCredentialsError extends Error {
 export class UnsupportedRegionalError extends Error {
     constructor(regionalId: string) {
         super(
-            `La regional ${regionalId.toUpperCase()} todavía no tiene conector de autogestión. ` +
-                "Los que existen están en src/autogestion/client/connector.ts (SYSTEM_BY_REGIONAL); " +
-                "enchufar uno nuevo es agregar su entrada ahí y su cliente en SYSTEMS.",
+            `La regional ${regionalId.toUpperCase()} no tiene un conector de autogestión instalado y configurado. ` +
+                "Instalá el conector de tu regional y agregá su paquete a UTN_MCP_CONNECTORS. " +
+                "El aula virtual se puede seguir usando sin autogestión.",
         );
         this.name = "UnsupportedRegionalError";
     }
@@ -46,27 +45,14 @@ export interface AutogestionSystem {
     id: string;
     name: string;
     support: SystemSupport;
+    regionales: string[];
     create(): AutogestionConnector;
 }
 
-const SYSTEM_BY_REGIONAL: Record<string, string> = {
-    frt: "sysacad-asp",
-};
-
-export const SYSTEMS: Record<string, AutogestionSystem> = {
-    "sysacad-asp": {
-        id: "sysacad-asp",
-        name: "SYSACAD (ASP clásico, FRT)",
-        support: "verified",
-        create: () => new SysacadAspConnector(),
-    },
-};
-
-export function systemForRegional(regionalId: string): AutogestionSystem | null {
-    const systemId = SYSTEM_BY_REGIONAL[regionalId];
-    return (systemId && SYSTEMS[systemId]) || null;
+export function systemForRegional(regionalId: string, systems: AutogestionSystem[]): AutogestionSystem | null {
+    return systems.find((system) => system.regionales.includes(regionalId)) ?? null;
 }
 
-export function registerSystem(system: AutogestionSystem): void {
-    SYSTEMS[system.id] = system;
-}
+export { HttpError } from "../../shared/http.js";
+export { htmlToText } from "../../shared/html.js";
+export type { CorrelatividadMateria, Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "./types.js";

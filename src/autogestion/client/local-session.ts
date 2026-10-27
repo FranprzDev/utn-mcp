@@ -1,15 +1,15 @@
-import { UnsupportedRegionalError, systemForRegional, type AutogestionConnector } from "./connector.js";
+import { UnsupportedRegionalError, systemForRegional, type AutogestionSystem, type AutogestionConnector } from "./connector.js";
 import { loadAutogestionCredentials } from "./credentials.js";
 import type { AutogestionSession } from "./session.js";
 
 export class LocalAutogestionSession implements AutogestionSession {
     private readonly connectors = new Map<string, Promise<AutogestionConnector>>();
 
-    constructor(private readonly getRegionalId: () => Promise<string>) {}
+    constructor(private readonly getRegionalId: () => Promise<string>, private readonly systems: () => Promise<AutogestionSystem[]>) {}
 
     getConnector(): Promise<AutogestionConnector> {
-        return this.getRegionalId().then((regionalId) => {
-            const system = systemForRegional(regionalId);
+        return this.getRegionalId().then(async (regionalId) => {
+            const system = systemForRegional(regionalId, await this.systems());
             if (!system) throw new UnsupportedRegionalError(regionalId);
             let connector = this.connectors.get(system.id);
             if (!connector) {

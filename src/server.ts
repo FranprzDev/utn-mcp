@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { AulaSession } from "./aula-virtual/client/session.js";
 import { registerAulaVirtualTools } from "./aula-virtual/tools.js";
+import { loadInstalledSystems } from "./autogestion/client/installed-systems.js";
 import { LocalAutogestionSession } from "./autogestion/client/local-session.js";
 import { registerAutogestionTools } from "./autogestion/tools.js";
 import type { FileSource } from "./shared/uploads.js";
@@ -21,7 +22,8 @@ export function createServer(
 
     registerAulaVirtualTools(server, aula, files);
     if (getRegionalId) {
-        registerAutogestionTools(server, new LocalAutogestionSession(getRegionalId), getRegionalId);
+        const systems = loadInstalledSystems;
+        registerAutogestionTools(server, new LocalAutogestionSession(getRegionalId, systems), getRegionalId, systems);
     }
 
     return server;

@@ -1,5 +1,5 @@
-import { HttpError } from "../../../shared/http.js";
-import type { CorrelatividadMateria } from "../types.js";
+import { HttpError } from "utn-mcp/autogestion";
+import type { CorrelatividadMateria } from "utn-mcp/autogestion";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
 export function parseCorrelatividadesPagina(html: string, pagina: string): CorrelatividadMateria[] {

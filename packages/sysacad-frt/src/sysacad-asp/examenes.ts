@@ -1,5 +1,5 @@
-import { HttpError } from "../../../shared/http.js";
-import type { ExamenMateria } from "../types.js";
+import { HttpError } from "utn-mcp/autogestion";
+import type { ExamenMateria } from "utn-mcp/autogestion";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
 export function parseExamenes(html: string): ExamenMateria[] {
