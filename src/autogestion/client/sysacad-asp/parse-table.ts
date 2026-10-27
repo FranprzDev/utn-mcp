@@ -15,9 +15,9 @@ export function parseTables(html: string): ParsedTable[] {
             );
             if (cells.length > 0) rows.push(cells);
         }
-        if (rows.length > 2 && rows[0].length < rows[1].length) {
+        if (rows.length > 1 && rows[0].length < rows[1].length) {
             tables.push({ headers: rows[1], rows: rows.slice(2) });
-        } else if (rows.length > 1) {
+        } else if (rows.length > 0) {
             tables.push({ headers: rows[0], rows: rows.slice(1) });
         }
     }
