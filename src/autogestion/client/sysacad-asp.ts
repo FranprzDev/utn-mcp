@@ -50,6 +50,7 @@ export class SysacadAspConnector implements AutogestionConnector {
         } catch (e) {
             throw new HttpError(`No se pudo conectar con ${new URL(BASE_URL).host}: ${(e as Error).message}`);
         }
+        if (!res.ok) throw new HttpError(`HTTP ${res.status} en ${new URL(res.url || BASE_URL).pathname}`, res.status);
         const html = decode(await res.arrayBuffer());
         const sessionId = SESSION_ID_PATTERN.exec(html)?.[1];
         if (!sessionId) {
@@ -155,6 +156,7 @@ export class SysacadAspConnector implements AutogestionConnector {
         } catch (e) {
             throw new HttpError(`No se pudo conectar con ${url.host}: ${(e as Error).message}`);
         }
+        if (!res.ok) throw new HttpError(`HTTP ${res.status} en ${new URL(res.url || BASE_URL).pathname}`, res.status);
         const html = decode(await res.arrayBuffer());
         if (LOGIN_PAGE_MARKERS.some((m) => html.includes(m))) {
             this.sessionId = null;
