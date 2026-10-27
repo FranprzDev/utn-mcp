@@ -13,7 +13,10 @@ export class LocalAutogestionSession implements AutogestionSession {
             if (!system) throw new UnsupportedRegionalError(regionalId);
             let connector = this.connectors.get(system.id);
             if (!connector) {
-                connector = this.login(system.id, system.create());
+                connector = this.login(system.id, system.create()).catch((error: unknown) => {
+                    this.connectors.delete(system.id);
+                    throw error;
+                });
                 this.connectors.set(system.id, connector);
             }
             return connector;
