@@ -1,26 +1,23 @@
-import { UnsupportedRegionalError, systemForRegional, type AutogestionSystem, type AutogestionConnector } from "./connector.js";
+import { type AutogestionSystem, type AutogestionConnector } from "./connector.js";
 import { loadAutogestionCredentials } from "./credentials.js";
 import type { AutogestionSession } from "./session.js";
 
 export class LocalAutogestionSession implements AutogestionSession {
     private readonly connectors = new Map<string, Promise<AutogestionConnector>>();
 
-    constructor(private readonly getRegionalId: () => Promise<string>, private readonly systems: () => Promise<AutogestionSystem[]>) {}
+    constructor(private readonly system: AutogestionSystem) {}
 
-    getConnector(): Promise<AutogestionConnector> {
-        return this.getRegionalId().then(async (regionalId) => {
-            const system = systemForRegional(regionalId, await this.systems());
-            if (!system) throw new UnsupportedRegionalError(regionalId);
-            let connector = this.connectors.get(system.id);
-            if (!connector) {
-                connector = this.login(system.id, system.create()).catch((error: unknown) => {
-                    this.connectors.delete(system.id);
-                    throw error;
-                });
-                this.connectors.set(system.id, connector);
-            }
-            return connector;
-        });
+    async getConnector(): Promise<AutogestionConnector> {
+        const system = this.system;
+        let connector = this.connectors.get(system.id);
+        if (!connector) {
+            connector = this.login(system.id, system.create()).catch((error: unknown) => {
+                this.connectors.delete(system.id);
+                throw error;
+            });
+            this.connectors.set(system.id, connector);
+        }
+        return connector;
     }
 
     private async login(systemId: string, connector: AutogestionConnector): Promise<AutogestionConnector> {

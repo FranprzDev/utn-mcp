@@ -1,5 +1,4 @@
 import type { McpServer } from "@modelcontextprotocol/server";
-import { systemForRegional, type AutogestionSystem } from "./client/connector.js";
 import type { AutogestionSession } from "./client/session.js";
 import { getCorrelatividades } from "./format/correlatividades.js";
 import { getEstadoAcademico } from "./format/estado-academico.js";
@@ -15,33 +14,7 @@ const failure = (e: unknown) => ({
     isError: true,
 });
 
-export function registerAutogestionTools(
-    server: McpServer,
-    session: AutogestionSession,
-    getRegionalId: () => Promise<string>,
-    systems: () => Promise<AutogestionSystem[]>,
-) {
-    server.registerTool(
-        "autogestion_sistema",
-        {
-            description:
-                "Qué sistema de autogestión académica usa la regional del usuario (Sysacad, SIU Guaraní, etc.) y " +
-                "si el conector ya está verificado con una cuenta real. Es el punto de entrada de la autogestión: " +
-                "si dice que la regional no tiene conector, no insistas con las otras tools autogestion_*.",
-            annotations: { readOnlyHint: true, openWorldHint: false },
-        },
-        async () => {
-            try {
-                const regionalId = await getRegionalId();
-                const system = systemForRegional(regionalId, await systems());
-                if (!system) return json({ regional: regionalId, sistema: null, mensaje: "No hay conector instalado y configurado para esta regional. Instalá el tuyo y agregalo a UTN_MCP_CONNECTORS." });
-                return json({ regional: regionalId, sistema: system.id, nombre: system.name, soporte: system.support, regionales: system.regionales });
-            } catch (e) {
-                return failure(e);
-            }
-        },
-    );
-
+export function registerAutogestionTools(server: McpServer, session: AutogestionSession) {
     server.registerTool(
         "autogestion_estado_academico",
         {

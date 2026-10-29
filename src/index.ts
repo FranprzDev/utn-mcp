@@ -81,8 +81,7 @@ async function main() {
     } else {
         // STDIO: un solo usuario, el de la compu, con la misma sesión para todas las conexiones.
         const aula = new LocalSession();
-        const getRegionalId = () => aula.getRegional().then((r) => r.id);
-        serveStdio(() => createServer(aula, { local: true }, getRegionalId), { onerror: (e) => logger.error(e.message) });
+        serveStdio(() => createServer(aula, { local: true }), { onerror: (e) => logger.error(e.message) });
         logger.info("Servidor MCP iniciado en STDIO");
     }
 }
