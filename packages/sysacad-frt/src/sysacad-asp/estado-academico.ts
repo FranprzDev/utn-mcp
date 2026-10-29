@@ -2,6 +2,10 @@ import { HttpError } from "utn-mcp/autogestion";
 import type { EstadoMateria } from "utn-mcp/autogestion";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
+/**
+ * Estado académico del alumno en su autogestión: la tabla cuyo encabezado nombra materia y estado.
+ * El mapeo de columnas sigue los encabezados reales de la página; lo que no matchea queda en `extra`.
+ */
 export function parseEstadoAcademico(html: string): EstadoMateria[] {
     const table = tableWithHeaders(html, ["materia", "estado"]);
     if (!table) {

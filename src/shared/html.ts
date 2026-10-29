@@ -1,3 +1,4 @@
+// Las con tildes/eñe son las que usan Sysacad y el aula para el español.
 const ENTITIES: Record<string, string> = {
     nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
     aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú", uuml: "ü",

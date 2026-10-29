@@ -2,9 +2,16 @@ import { type AutogestionSystem, type AutogestionConnector } from "./connector.j
 import { loadAutogestionCredentials } from "./credentials.js";
 import type { AutogestionSession } from "./session.js";
 
+/**
+ * Sesión del modo local: un solo usuario, el de la compu. Recibe el sistema ya resuelto para la
+ * regional (la misma que eligió para el aula) y loguea el conector con las credenciales del
+ * keychain o las env vars, una vez por sistema y bajo demanda: el primer uso es el que pide login.
+ */
 export class LocalAutogestionSession implements AutogestionSession {
+    /** Conectores ya logueados, por sistema: un login alcanza para todas las tools. */
     private readonly connectors = new Map<string, Promise<AutogestionConnector>>();
 
+    /** El sistema llega resuelto desde afuera: las plataformas no se conocen entre sí. */
     constructor(private readonly system: AutogestionSystem) {}
 
     async getConnector(): Promise<AutogestionConnector> {

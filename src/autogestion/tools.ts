@@ -5,6 +5,7 @@ import { getEstadoAcademico } from "./format/estado-academico.js";
 import { getExamenes } from "./format/examenes.js";
 import { getCursandoAhora } from "./format/notas-parciales.js";
 
+// JSON compacto: indentar estas respuestas cuesta ~25% más de contexto y no se lee mejor.
 const json = (data: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data) }],
 });

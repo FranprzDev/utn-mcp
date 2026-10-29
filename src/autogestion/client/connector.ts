@@ -1,14 +1,27 @@
 import type { Correlatividades, EstadoMateria, ExamenMateria, NotasParcialesMateria } from "./types.js";
 
+/**
+ * Un sistema de autogestión académica de una regional (Sysacad, SIU Guaraní, etc.).
+ * Cada sistema es un conector que implementa esta interfaz; los conectores vienen de paquetes
+ * instalados que exportan un `AutogestionSystem` y se declaran en `UTN_MCP_CONNECTORS`: cada
+ * regional enchufa su propio parser.
+ */
 export interface AutogestionConnector {
+    /** Id del sistema, tal como lo declara el paquete que lo provee. */
     readonly systemId: string;
+    /** Pide legajo/usuario y contraseña al sistema y deja la sesión lista. */
     login(credentials: AutogestionCredentials): Promise<void>;
+    /** Materias del estado académico del alumno logueado, ya parseadas. */
     estadoAcademico(): Promise<EstadoMateria[]>;
+    /** Correlatividades de la carrera del alumno logueado, para cursar y, si el sistema las publica, para rendir. */
     correlatividades(): Promise<Correlatividades>;
+    /** Cursada actual, si el sistema la publica; no todos los conectores la tienen. */
     notasParciales?(): Promise<NotasParcialesMateria[]>;
+    /** Historial de exámenes finales, si el sistema lo publica; no todos los conectores lo tienen. */
     examenes?(): Promise<ExamenMateria[]>;
 }
 
+/** Credenciales de un sistema de autogestión. En Sysacad `username` es el legajo. */
 export interface AutogestionCredentials {
     username: string;
     password: string;
@@ -39,8 +52,10 @@ export class UnsupportedRegionalError extends Error {
     }
 }
 
+/** Qué se sabe del conector: `verified` = alguien entró con una cuenta real; `unverified` = falta esa prueba. */
 export type SystemSupport = "verified" | "unverified";
 
+/** Lo que exporta un paquete de conector: qué regionales atiende y cómo crear el conector. */
 export interface AutogestionSystem {
     id: string;
     name: string;
@@ -49,6 +64,7 @@ export interface AutogestionSystem {
     create(): AutogestionConnector;
 }
 
+/** El sistema de una regional entre los conectores instalados, o null si ninguno la cubre. */
 export function systemForRegional(regionalId: string, systems: AutogestionSystem[]): AutogestionSystem | null {
     return systems.find((system) => system.regionales.includes(regionalId)) ?? null;
 }

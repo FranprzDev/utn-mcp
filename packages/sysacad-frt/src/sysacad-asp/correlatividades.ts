@@ -2,6 +2,7 @@ import { HttpError } from "utn-mcp/autogestion";
 import type { CorrelatividadMateria } from "utn-mcp/autogestion";
 import { columnIndex, tableWithHeaders } from "./parse-table.js";
 
+/** La tabla de correlatividades de una página: encabezado con materia y correlatividad. */
 export function parseCorrelatividadesPagina(html: string, pagina: string): CorrelatividadMateria[] {
     const table = tableWithHeaders(html, ["materia", "correlatividad"]);
     if (!table) {
