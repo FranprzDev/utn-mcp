@@ -2,3 +2,7 @@
 /build
 /vendor
 .env
+/notes
+/packages/*/node_modules
+/packages/*/build
+/build-connectors
