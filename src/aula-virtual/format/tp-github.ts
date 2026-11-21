@@ -6,6 +6,8 @@ import { downloadAulaFile } from "./file-download.js";
 import { userFacingUrl } from "./files.js";
 import { findModule } from "./navigate.js";
 import { createBranch, createPullRequest, getRepoRef, putFile } from "../../shared/github.js";
+import { tpReposFile } from "../../shared/paths.js";
+import { resolveTpRepo } from "./tp-repos.js";
 
 /** Un archivo externo linkeado desde la consigna (típico: el notebook de Colab que ES el TP). */
 interface ExternalDownload {
@@ -65,8 +67,8 @@ async function downloadExternalNotebook(links: string[]): Promise<ExternalDownlo
 
 export interface TpToGithubArgs {
     direccion: string;
-    repo: string;
-    carpeta: string;
+    repo?: string;
+    carpeta?: string;
     archivos?: string[];
     rama?: string;
     titulo?: string;
@@ -89,6 +91,25 @@ const slugify = (text: string) =>
         .replace(/^-+|-+$/g, "");
 
 /**
+ * Carpeta por defecto a partir del nombre de la consigna: "TP 5 - Aplicaciones de AG" →
+ * "TP5-Aplicaciones-AG" (sinonimios cortos fuera, siglas en mayúscula conservadas).
+ */
+const CARPETA_STOPWORDS = new Set(["de", "del", "la", "el", "los", "las", "y", "e", "en", "a", "al"]);
+
+export function defaultCarpeta(moduleName: string): string {
+    const cleaned = moduleName.trim().replace(/\s+/g, " ");
+    const m = /^tp\s*(\d+)\s*[-–:]?\s*(.*)$/i.exec(cleaned);
+    const resto = (m ? m[2] : cleaned)
+        .split(/\s*[-–—]\s*|\s+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length > 0 && !CARPETA_STOPWORDS.has(w.toLowerCase()))
+        .map((w) => (/^\p{Lu}+$/u.test(w) && w.length <= 4 ? w : w[0].toUpperCase() + w.slice(1)))
+        .join("-");
+    const carpeta = (m ? `TP${m[1]}` + (resto ? `-${resto}` : "") : resto) || "TP";
+    return safeName(carpeta);
+}
+
+/**
  * Publica los archivos de una consigna del aula como PR en GitHub: descarga byte-idéntica,
  * rama nueva solo con esos archivos y PR con fuente, sha256 y verificación en la descripción.
  */
@@ -99,6 +120,25 @@ export async function tpToGithubPr(session: AulaSession, args: TpToGithubArgs) {
             `Pasá la dirección del módulo de la consigna ("/curso/{courseId}/mod/{cmid}", de aula_open), no "${args.direccion}".`,
         );
     }
+
+    // El repo se resuelve antes de bajar o escribir nada: si hay duda, la respuesta es "elegí", sin efectos.
+    const course = (await getUserCourses(session)).find((c) => c.id === address.courseId);
+    const courseName = course?.fullname ?? course?.shortname ?? undefined;
+    const resolution = await resolveTpRepo(address.courseId, courseName, args.repo);
+    if (resolution.estado === "elegir") {
+        return {
+            estado: "elegir_repo" as const,
+            motivo: resolution.motivo,
+            candidatos: resolution.candidatos,
+            reposPropios: resolution.reposPropios,
+            comoElegir:
+                "Volvé a llamar la tool con `repo` (y `carpeta` si querés). Para que no lo pregunte más, " +
+                `agregá el curso al mapeo ${tpReposFile()}: { "cursos": [ { "cursoId": ${address.courseId}, "materia": "...", "repo": "owner/nombre" } ] }.`,
+            curso: courseName,
+            consigna: args.direccion,
+        };
+    }
+    const repo = resolution.repo;
 
     const { module } = await findModule(session, address.courseId, address.cmid);
     const adjuntos = (module.contents ?? []).filter((c) => c.type === "file");
@@ -135,17 +175,18 @@ export async function tpToGithubPr(session: AulaSession, args: TpToGithubArgs) {
             "el archivo es externo (no está en el aula): sha256 del notebook bajado; el blob sha de GitHub coincide con lo descargado";
     }
 
-    const course = (await getUserCourses(session)).find((c) => c.id === address.courseId);
-    const carpeta = args.carpeta.replace(/^\/+|\/+$/g, "");
-    const rama = args.rama ?? `tp/${slugify(carpeta)}`;
+    const carpetaBase = resolution.carpetaBase?.replace(/^\/+|\/+$/g, "");
+    const carpetaPropia = (args.carpeta ?? defaultCarpeta(module.name)).replace(/^\/+|\/+$/g, "");
+    const carpeta = carpetaBase ? `${carpetaBase}/${carpetaPropia}` : carpetaPropia;
+    const rama = args.rama ?? `tp/${slugify(carpetaPropia)}`;
 
-    const repoRef = await getRepoRef(args.repo);
-    await createBranch(args.repo, rama, repoRef.headSha);
+    const repoRef = await getRepoRef(repo);
+    await createBranch(repo, rama, repoRef.headSha);
 
     const publicados = [];
     for (const archivo of archivos) {
         const path = `${carpeta}/${safeName(archivo.filename)}`;
-        const committed = await putFile(args.repo, rama, path, archivo.bytes, `Add ${path} from the aula TP`);
+        const committed = await putFile(repo, rama, path, archivo.bytes, `Add ${path} from the aula TP`);
         if (!committed.verified) {
             throw new Error(
                 `GitHub no guardó byte-idéntico "${path}" (blob sha ${committed.blobSha}). Revisá el repo antes de reintentar.`,
@@ -165,7 +206,7 @@ export async function tpToGithubPr(session: AulaSession, args: TpToGithubArgs) {
         tabla;
 
     const pr = await createPullRequest(
-        args.repo,
+        repo,
         rama,
         repoRef.defaultBranch,
         args.titulo ?? module.name,
@@ -173,8 +214,10 @@ export async function tpToGithubPr(session: AulaSession, args: TpToGithubArgs) {
     );
 
     return {
+        estado: "publicado" as const,
         pr: { url: pr.url, numero: pr.number },
-        repo: args.repo,
+        repo,
+        repoOrigen: resolution.origen,
         rama,
         base: repoRef.defaultBranch,
         consigna: module.name,

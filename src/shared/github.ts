@@ -48,6 +48,39 @@ export function gitBlobSha(bytes: Uint8Array): string {
     return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
+export interface GithubRepoSummary {
+    fullName: string;
+    description: string;
+}
+
+/** Repos de los que el token es dueño (para la heurística materia → repo), hasta 300. */
+export async function listOwnRepos(): Promise<GithubRepoSummary[]> {
+    const repos: GithubRepoSummary[] = [];
+    for (let page = 1; page <= 3; page++) {
+        const batch = await api<{ full_name: string; description: string | null }[]>(
+            "GET",
+            `/user/repos?affiliation=owner&per_page=100&page=${page}`,
+        );
+        repos.push(...batch.map((r) => ({ fullName: r.full_name, description: r.description ?? "" })));
+        if (batch.length < 100) break;
+    }
+    return repos;
+}
+
+/** El README del repo en texto plano, o null si no tiene o no se pudo leer (no bloquea la heurística). */
+export async function getRepoReadme(repo: string): Promise<string | null> {
+    const res = await fetch(`${API}/repos/${repo}/readme`, {
+        headers: {
+            authorization: `Bearer ${token()}`,
+            accept: "application/vnd.github.raw",
+            "x-github-api-version": "2022-11-28",
+        },
+        signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    return res.text();
+}
+
 export async function getRepoRef(repo: string): Promise<GithubRepoRef> {
     const info = await api<{ default_branch: string }>("GET", `/repos/${repo}`);
     const ref = await api<{ object: { sha: string } }>(
