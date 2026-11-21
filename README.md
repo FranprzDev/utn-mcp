@@ -29,11 +29,15 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_choice_answer` | Responde una elección o te anota en un grupo. |
 | `aula_send_message` | Manda un mensaje privado a un docente o compañero. |
 | `aula_calendar_add_event` | Agrega un recordatorio a tu calendario del aula. |
+| `aula_tp_to_github` | Publica los archivos de una consigna (cualquier tipo: ipynb, pdf, md, docx, zip...) en un repo tuyo de GitHub, byte-idénticos y como PR con el sha256 y la fuente en la descripción: vos revisás y mergeás. Necesita `GITHUB_TOKEN` en el entorno. |
 | `plan_get_profile` | Lee la carrera y el plan que tenés guardados en `profile.md`. Solo en modo local. |
 | `plan_set_profile` | Guarda tu carrera y tu plan en `profile.md` (también lo podés editar a mano). Solo en modo local. |
 | `plan_recursar_impacto` | Te dice qué materias dejás de poder cursar si recursás una (perdés la regularidad): las que se cortan directo, las que se afectan después por la cadena de correlativas y los finales que exigen la materia aprobada, ordenado por nivel. Por ahora Ingeniería en Sistemas de Información, planes 2008 y 2023. |
 
 Al abrir una tarea, `aula_open` muestra si la entregaste, cuándo vence y la devolución con la nota. Las tools que escriben le piden al agente que te muestre lo que va a hacer y espere tu confirmación.
+
+### TPs a GitHub
+`aula_tp_to_github` baja los adjuntos de una consigna (o el notebook de Colab/Drive que linkea, si no hay adjuntos) y los sube tal cual a una rama nueva de tu repo, con un PR que trae curso, consigna, link del aula y sha256 de cada archivo. Nunca toca la rama default ni mergea. Para saber a qué repo va cada materia mira, en este orden: el parámetro `repo` si lo pasás, el mapeo `tp-repos.json` en la carpeta de configuración (por id de curso o por nombre de materia, por ejemplo `{ "cursos": [ { "cursoId": 1408, "materia": "Algoritmos Genéticos", "repo": "FranprzDev/HeuristcsAndML" } ] }`) y, si no hay mapeo, una heurística sobre tus repos (nombre, descripción y README). Cuando no hay una sola respuesta clara no escribe nada: te devuelve los candidatos para que elijas.
 
 ### Plan de estudios y correlativas
 `plan_recursar_impacto` calcula con las correlativas del plan, sin que el modelo las invente. Entiende el nombre como lo escribas ("diseño de sistemas", "estructura de datos"); si hay más de una materia posible te pregunta cuál. El plan sale de `profile.md` (en la carpeta de configuración, `~/.config/utn-mcp` en Linux y macOS) o del parámetro `plan`; si te cambiás de plan, se actualiza el perfil antes de calcular. En modo HTTP todavía no hay perfil por usuario, así que el plan se pasa en cada consulta.
