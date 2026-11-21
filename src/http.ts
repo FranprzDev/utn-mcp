@@ -12,10 +12,13 @@ import {
     type OAuthTokenVerifier,
 } from "@modelcontextprotocol/server";
 import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
+import type { StoredAutogestion } from "./autogestion/client/stored-session.js";
+import { mountAutogestionLink } from "./autogestion/link-page.js";
 import type { AccessPolicy } from "./oauth/access.js";
 import { mountAdmin } from "./oauth/admin.js";
 import type { RedirectAllowlist } from "./oauth/redirects.js";
 import { cors, mountOAuth } from "./oauth/server.js";
+import { attachmentHeader, type DownloadOutbox } from "./shared/downloads.js";
 import { logger } from "./shared/logger.js";
 import type { SessionStore } from "./shared/store/session-store.js";
 import { escapeHtml, page } from "./shared/pages.js";
@@ -72,8 +75,19 @@ export interface HttpOptions {
     adminSecret?: string;
 }
 
-/** El factory recibe en `ctx.authInfo` el token ya validado, con el usuario; de ahí arma su sesión. */
-export function startHttpServer(factory: McpServerFactory, options: HttpOptions, store: SessionStore, inbox: UploadInbox) {
+/**
+ * El factory recibe en `ctx.authInfo` el token ya validado, con el usuario; de ahí arma su sesión.
+ * `files` sirve los links de subida y de bajada; `autogestion`, la página donde cada usuario entra a la
+ * autogestión de su regional.
+ */
+export function startHttpServer(
+    factory: McpServerFactory,
+    options: HttpOptions,
+    store: SessionStore,
+    files: { inbox: UploadInbox; outbox: DownloadOutbox },
+    autogestion: StoredAutogestion,
+) {
+    const { inbox, outbox } = files;
     const { host, port, publicUrl, access, redirects, adminSecret } = options;
     const handler = createMcpHandler(factory, { onerror: (e) => logger.error(e.message) });
     const verifier = storeVerifier(store);
@@ -131,6 +145,16 @@ export function startHttpServer(factory: McpServerFactory, options: HttpOptions,
         res.type("html").send(page(upload.title, uploadForm(upload.limits)));
     });
     app.post("/subir/:id", sameOrigin, (req, res) => receiveUpload(inbox, req, res));
+    // Igual que la subida: el id es el secreto. Se puede bajar varias veces hasta que vence.
+    app.get("/bajar/:id", sameOrigin, (req, res) => {
+        const download = outbox.get(String(req.params.id));
+        if (!download) return void res.status(404).type("html").send(page("Link vencido", DOWNLOAD_EXPIRED));
+        res.setHeader("Content-Disposition", attachmentHeader(download.name));
+        // Lleva datos personales: que no lo guarde ningún cache en el camino.
+        res.setHeader("Cache-Control", "no-store");
+        res.type(download.mimeType).send(Buffer.from(download.bytes));
+    });
+    mountAutogestionLink(app, autogestion, sameOrigin);
 
     app.listen(port, host, () => {
         logger.info(`Servidor MCP escuchando en http://${host}:${port}/mcp`);
@@ -219,6 +243,7 @@ function securityHeaders(https: boolean): RequestHandler {
 }
 
 const EXPIRED = "<p>Este link de subida venció o ya no existe. Pedile al agente uno nuevo.</p>";
+const DOWNLOAD_EXPIRED = "<p>Este link de bajada venció o ya no existe. Pedile al agente que lo descargue de nuevo.</p>";
 const USED = "<p>Ya se subieron archivos a este link y no se pueden cambiar. Si te equivocaste, pedile al agente uno nuevo.</p>";
 
 function uploadForm(limits: UploadLimits): string {

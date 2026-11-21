@@ -13,6 +13,7 @@ import {
 } from "./format/actions.js";
 import { ROOT } from "./format/address.js";
 import { readAulaFile } from "./format/files.js";
+import { viewGrades } from "./format/grades.js";
 import { buildStudyPack } from "./format/study-pack.js";
 import { open } from "./format/navigate.js";
 import { tpToGithubPr } from "./format/tp-github.js";
@@ -78,7 +79,9 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
                 "y módulos, un módulo con sus archivos y fechas, un foro con el índice de sus discusiones, o " +
                 "una discusión con sus mensajes completos.\n\n" +
                 "Según el tipo de módulo trae además: en una tarea (assign), `entrega` con el estado, el " +
-                "vencimiento, lo que se subió y la devolución con la nota; en una elección (choice) o " +
+                "vencimiento, lo que se subió y la devolución con la nota; en un cuestionario (quiz), " +
+                "`cuestionario` con la `calificacionFinal` (\"0,00 / 10,00\") y cada intento con su estado, " +
+                "comienzo, fin y nota; en una elección (choice) o " +
                 "selección de grupos (choicegroup), `eleccion` con las opciones y sus ids; en un foro, " +
                 "`puedeAbrirHilo`; en una discusión, el `id`, el `autorId` y las `acciones` permitidas de " +
                 "cada publicación. Es lo que piden las tools que escriben en el aula.\n\n" +
@@ -168,6 +171,33 @@ export function registerAulaVirtualTools(server: McpServer, session: AulaSession
         },
     );
 
+    server.registerTool(
+        "aula_grades",
+        {
+            description:
+                "Las calificaciones del usuario en un curso, las mismas que ve en \"Calificaciones\" del aula: " +
+                "tareas, cuestionarios y también las notas que el docente carga a mano (un TP corregido " +
+                "en papel, un parcial), que no aparecen en ningún módulo. Usala para saber cómo va en una " +
+                "materia o si aprobó algo.\n\n" +
+                "Cada ítem trae `calificacion` (como la formatea el aula, sin nota si todavía no hay), " +
+                "`maximo`, `porcentaje` y, si es de un módulo, su `direccion` para abrirlo con aula_open. " +
+                "`tipo` dice de dónde sale: el módulo (quiz, assign), \"manual\", \"category\" o " +
+                "\"course\" (el total).",
+            inputSchema: z.object({
+                direccion: z.string().describe('Dirección del curso, de aula_list_courses. Ej: "/curso/691".'),
+            }),
+            annotations: READ_ONLY,
+        },
+        async ({ direccion }) => {
+            try {
+                return json(await viewGrades(session, direccion));
+            } catch (e) {
+                return failure(e);
+            }
+        },
+    );
+
+    // El pack se guarda en el disco: solo en STDIO, donde el servidor corre en la compu del usuario.
     if (files.local) {
         server.registerTool(
             "aula_study_pack",

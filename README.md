@@ -19,6 +19,7 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `aula_list_courses` | Lista tus cursos. Es el punto de partida. |
 | `aula_open` | Entra a un curso, un módulo, un foro o una discusión. Cada respuesta trae las direcciones de lo que hay adentro y de un nivel más arriba, así el agente navega sin perderse. |
 | `aula_read_file` | Lee un archivo del aula, por partes cuando es largo. |
+| `aula_grades` | Tus calificaciones en un curso, incluidas las que el docente carga a mano. |
 | `aula_study_pack` | Une el material de estudio de una materia en un solo PDF con índice (un 'machacado'), dejando afuera lo administrativo, guardado en tu compu. Solo en modo local. |
 | `aula_get_site_info` | Datos de tu usuario y de tu regional en el aula virtual. |
 | `aula_forum_post` | Abre un hilo en un foro o responde en una discusión. |
@@ -33,8 +34,15 @@ El agente recorre el aula como lo harías vos: entra al curso, mira los foros y 
 | `plan_get_profile` | Lee la carrera y el plan que tenés guardados en `profile.md`. Solo en modo local. |
 | `plan_set_profile` | Guarda tu carrera y tu plan en `profile.md` (también lo podés editar a mano). Solo en modo local. |
 | `plan_recursar_impacto` | Te dice qué materias dejás de poder cursar si recursás una (perdés la regularidad): las que se cortan directo, las que se afectan después por la cadena de correlativas y los finales que exigen la materia aprobada, ordenado por nivel. Por ahora Ingeniería en Sistemas de Información, planes 2008 y 2023. |
+| `autogestion_cursando_ahora` | Las materias que estás cursando ahora según la autogestión, con comisión, aula y horarios cuando el sistema los publica. Incluye electivas. Aparece solo si tu regional tiene un conector de autogestión. |
+| `autogestion_estado_academico` | Tu estado académico según la autogestión de tu regional: cada materia con su estado, plan, nota y fecha. Aparece solo si tu regional tiene un conector de autogestión. |
+| `autogestion_correlatividades` | Las correlatividades de tu carrera según la autogestión, para cursar y para rendir, en vez de datos fijos del repo. Aparece solo si tu regional tiene un conector de autogestión. |
+| `autogestion_examenes` | Tu historial de finales según la autogestión: fecha, materia, nota o estado, plan y código. Aparece solo si tu regional tiene un conector de autogestión. |
+| `autogestion_certificados` | Los certificados y constancias que tu autogestión ofrece descargar (en Sysacad: certificado de alumno regular y actividad académica, con validación por código QR), cada uno con su referencia para pedir la descarga con `autogestion_descargar_certificado`. Aparece solo si tu regional tiene un conector de autogestión. |
+| `autogestion_descargar_certificado` | Descarga un certificado de la autogestión. En modo local lo guarda en tu compu y la respuesta trae la ruta del archivo; en modo HTTP devuelve un link de bajada que vence en 10 minutos: lo abrís en el navegador o, si el agente tiene terminal en tu compu, lo baja él. |
 
-Al abrir una tarea, `aula_open` muestra si la entregaste, cuándo vence y la devolución con la nota. Las tools que escriben le piden al agente que te muestre lo que va a hacer y espere tu confirmación.
+
+Al abrir una tarea, `aula_open` muestra si la entregaste, cuándo vence y la devolución con la nota. Al abrir un cuestionario, muestra tus intentos y la nota final. Las tools que escriben le piden al agente que te muestre lo que va a hacer y espere tu confirmación.
 
 ### TPs a GitHub
 `aula_tp_to_github` baja los adjuntos de una consigna (o el notebook de Colab/Drive que linkea, si no hay adjuntos) y los sube tal cual a una rama nueva de tu repo, con un PR que trae curso, consigna, link del aula y sha256 de cada archivo. Nunca toca la rama default ni mergea. Para saber a qué repo va cada materia mira, en este orden: el parámetro `repo` si lo pasás, el mapeo `tp-repos.json` en la carpeta de configuración (por id de curso o por nombre de materia, por ejemplo `{ "cursos": [ { "cursoId": 1408, "materia": "Algoritmos Genéticos", "repo": "FranprzDev/HeuristcsAndML" } ] }`) y, si no hay mapeo, una heurística sobre tus repos (nombre, descripción y README). Cuando no hay una sola respuesta clara no escribe nada: te devuelve los candidatos para que elijas.
@@ -133,7 +141,7 @@ utn-mcp login
 y en la config del cliente usás `"command": "utn-mcp"` sin argumentos.
 
 ### Regionales
-La regional se elige al iniciar sesión, de una lista con las regionales de la UTN. Buenos Aires (FRBA), Córdoba (FRC), Resistencia (FRRE) y Tucumán (FRT) ya están probadas. También está el aula de la Tecnicatura en Programación a distancia del SIED (TUP). El login se adapta solo: si el aula entra por SSO, sea un Keycloak propio (FRBA) u Office 365 (Haedo, FRH, y San Nicolás, FRSN), usa el SSO; si no, el login directo de Moodle. Con Office 365 todavía no se pueden completar cuentas que piden segundo factor (MFA).
+La regional se elige al iniciar sesión, de una lista con las regionales de la UTN. Buenos Aires (FRBA), Córdoba (FRC), Resistencia (FRRE) y Tucumán (FRT) ya están probadas. También está el aula de la Tecnicatura en Programación a distancia del SIED (TUP). El login se adapta solo: si el aula entra por SSO, sea un Keycloak propio (FRBA) u Office 365 (Haedo, FRH, y San Nicolás, FRSN), usa el SSO; si no, el login directo de Moodle. Si tu cuenta de Office 365 pide segundo factor (MFA), el login te pregunta con qué método seguir y te pide el código o que apruebes en el celular. Como el servidor renueva la sesión sin vos delante, con MFA te va a pedir que vuelvas a iniciar sesión cuando venza (dura semanas).
 
 La lista puede traer regionales que nadie probó todavía: su aula tiene habilitado el servicio que usa UTN-MCP, así que casi seguro anda. En un servidor hosteado, la primera persona que entra con una de esas la deja verificada para el resto. Las que no tienen el servicio habilitado aparecen como "todavía sin soporte": se pueden elegir, pero el login avisa que por ahora no se puede usar y no manda la contraseña.
 
@@ -145,6 +153,15 @@ UTN_AULA_BASE_URL=https://tu-campus.utn.edu.ar
 Aparece como una opción más al iniciar sesión.
 
 `UTN_REGIONAL` (por ejemplo, `UTN_REGIONAL=frt`) elige la que viene marcada por defecto, y es la que se usa si en lugar de `login` definís `UTN_USER` y `UTN_PASS`.
+
+### Autogestión (Sysacad)
+Si tu regional usa el Sysacad clásico, al terminar `login` te pregunta si querés conectarlo también. Si decís que sí, baja el conector de Sysacad (no viene con el paquete: si no lo usás, no se baja), te pide tu legajo y tu contraseña de Sysacad, que no siempre son las del aula, los prueba y los guarda en el gestor de credenciales. Para conectarlo después, o cambiar la contraseña:
+```bash
+npx -y utn-mcp login autogestion
+```
+Con Sysacad conectado aparecen las tools `autogestion_*`: tu estado académico, lo que estás cursando, tus finales y las correlatividades de tu carrera. Por ahora son solo de lectura.
+
+Lo usan Bahía Blanca, Chubut, Concordia, Delta, General Pacheco, Haedo, La Rioja, Mar del Plata, Neuquén, Paraná, Reconquista, Santa Fe, San Francisco, San Nicolás, San Rafael, Tucumán, Tierra del Fuego y Venado Tuerto. En Tucumán anduvo con una versión anterior del conector; esta todavía no se probó con una cuenta real: si lo probás, contanos en un [issue](https://github.com/nialvape/utn-mcp/issues) si funcionó. En algunas el usuario no es el legajo tal cual (en Delta va sin el "23-", por ejemplo); el login te dice qué escribir. Avellaneda y Rosario quedan afuera porque su Sysacad pide un captcha o un desafío del navegador, y Rafaela, Santa Cruz y Trenque Lauquen porque no tienen HTTPS válido y la contraseña viajaría expuesta.
 
 ### Modo HTTP (opcional)
 Necesita Node 22.13 o más nuevo. Primero, una vez:
@@ -162,6 +179,8 @@ En este modo el servidor no lee archivos de tu disco: para entregar, el agente p
 ### Hostearlo para otros
 En modo HTTP el servidor también es servidor de autorización OAuth: un cliente MCP (Claude, ChatGPT) que se conecta a `https://tu-dominio/mcp` recibe un 401, descubre el OAuth y abre una página donde el alumno elige su regional y entra con su usuario de la UTN. Cada alumno usa el aula de su regional, aunque sean de regionales distintas. Ese login vincula su aula: la contraseña se usa una sola vez para sacar el token de Moodle y **no se guarda**. Cuando la sesión del aula vence, el agente le pasa el link de `/login` para renovarla, sin reconectar el cliente.
 
+La autogestión (Sysacad) funciona igual para cada alumno, según su regional. Al arrancar, el servidor instala los conectores del catálogo en `connectors/` de su carpeta de datos. La primera vez que el agente la necesita, le pasa al alumno un link a `/autogestion/...` para que entre con su legajo y contraseña de Sysacad desde el navegador: la contraseña nunca pasa por el chat. Como con el aula, la contraseña se usa una sola vez y **no se guarda**: queda cifrada en la base solo la sesión de Sysacad. Cuando Sysacad la vence (unos minutos sin usarla), el agente le vuelve a pasar el link.
+
 Quién puede entrar lo decidís vos: con `UTN_MCP_ALLOWED_EMAILS` (una lista), o con `UTN_MCP_ACCESS_URL`, que apunta a un servicio tuyo. El servidor le hace `POST` con `{ "email", "usuario", "regional" }` y el header `Authorization: Bearer <UTN_MCP_ACCESS_SECRET>`, y espera `{ "permitido": true }` o `{ "permitido": false, "motivo": "...", "url": "..." }`. Se consulta al conectar y en cada renovación del token (cada hora), así que una baja se aplica sola.
 
 La configuración va en variables de entorno o en un `.env` en la carpeta desde donde lo corrés (copiá [`.env.example`](https://github.com/nialvape/utn-mcp/blob/main/.env.example)):
@@ -173,9 +192,10 @@ La configuración va en variables de entorno o en un `.env` en la carpeta desde 
 | `UTN_MCP_ACCESS_URL`, `UTN_MCP_ACCESS_SECRET` | Servicio que decide quién puede entrar. | — |
 | `UTN_MCP_ALLOWED_EMAILS` | Emails o dominios (`@frba.utn.edu.ar`) habilitados, separados por coma, si no hay `UTN_MCP_ACCESS_URL`. | Entra cualquiera con usuario de la UTN |
 | `UTN_MCP_REDIRECT_ALLOW` | Hosts (`app.ejemplo.com`) o esquemas (`miapp:`) extra, separados por coma, a los que puede volver el login de OAuth. Loopback, Claude, ChatGPT, VS Code y Cursor pasan siempre. Cualquier otro host HTTPS (un agente propio, por ejemplo) se acepta, pero el login avisa a dónde vuelve y el alumno tiene que marcar que lo conecta bajo su responsabilidad: es la defensa contra alguien que use tu página de login para quedarse con su sesión. Los hosts de esta lista pasan sin aviso. | — |
-| `UTN_MCP_ADMIN_SECRET` | Habilita la API de `/admin` para un panel de cuentas tuyo: `POST /admin/usuarios` (todos los usuarios con sus apps), `/admin/clientes` y `/admin/clientes/revocar` (las apps de un usuario, por email), `/admin/regionales` (las regionales con su soporte) y `/admin/verificar` (entra al aula con usuario y contraseña, como el login de OAuth, y le guarda la sesión). | — |
+| `UTN_MCP_ADMIN_SECRET` | Habilita la API de `/admin` para un panel de cuentas tuyo: `POST /admin/usuarios` (todos los usuarios con sus apps), `/admin/clientes` y `/admin/clientes/revocar` (las apps de un usuario, por email), `/admin/regionales` (las regionales con su soporte) y `/admin/verificar` (entra al aula con usuario y contraseña, como el login de OAuth, y le guarda la sesión; si Microsoft pide segundo factor, devuelve el paso y se sigue con `/admin/segundo-factor`). | — |
 | `UTN_MCP_LOGIN_URL` | Página donde el usuario renueva su sesión del aula; el agente se la pasa. | `<UTN_MCP_PUBLIC_URL>/login` |
 | `UTN_MCP_DB`, `UTN_MCP_KEY` | Base de sesiones y su clave de cifrado (32 bytes en base64). | En la carpeta de config |
+| `UTN_MCP_PACK_MAX_FILES`, `UTN_MCP_PACK_MAX_MB`, `UTN_MCP_PACK_MAX_FINAL_MB` | Topes del compilado de estudio (`aula_study_pack`, solo modo local): archivos por pack, MB de descarga total y MB del PDF final, que se arma entero en memoria. | 150, 300 y 30 |
 
 Con Docker, detrás de un reverse proxy con HTTPS en la misma máquina (red host, para que el rate limit del login vea la IP real):
 ```bash
@@ -190,11 +210,12 @@ Guardá esa `UTN_MCP_KEY`: sin ella no se pueden descifrar las sesiones guardada
 Instalado en tu computadora, todo queda ahí:
 - **Usuario y contraseña**: en el gestor de credenciales del sistema (Windows Credential Manager, Keychain en macOS, Secret Service en Linux).
 - **Token del aula virtual**: en `%APPDATA%\utn-mcp\session.json` (Windows) o `~/.config/utn-mcp/session.json` (Linux y macOS).
-- **En modo HTTP**: la contraseña no se guarda; la sesión va cifrada en `utn-mcp.db`, en la misma carpeta, con la clave de `store.key` (o la de `UTN_MCP_KEY`). Del token del cliente solo se guarda el hash.
+- **Conector de autogestión**: en `connectors/`, dentro de esa misma carpeta. El legajo y la contraseña de Sysacad van al gestor de credenciales, aparte de los del aula.
+- **En modo HTTP**: la contraseña no se guarda; la sesión va cifrada en `utn-mcp.db`, en la misma carpeta, con la clave de `store.key` (o la de `UTN_MCP_KEY`). Del token del cliente solo se guarda el hash. Con la de Sysacad pasa lo mismo: no se guarda, y su sesión va cifrada en la misma base.
 
-En Linux sin gestor de credenciales (servidores, Docker, WSL) podés definir las variables de entorno `UTN_USER` y `UTN_PASS` en lugar de usar `login`.
+En Linux sin gestor de credenciales (servidores, Docker, WSL) podés definir las variables de entorno `UTN_USER` y `UTN_PASS` en lugar de usar `login`. Para Sysacad son `SYSACAD_ASP_USER` y `SYSACAD_ASP_PASS`.
 
-Si usás un servidor hosteado por otra persona, tu sesión del aula la guarda ese servidor (cifrada, y sin tu contraseña): revisá su política de privacidad.
+Si usás un servidor hosteado por otra persona, tus sesiones del aula y de Sysacad las guarda ese servidor (cifradas, y sin tus contraseñas): revisá su política de privacidad.
 
 ## Desarrollo
 ```bash
@@ -207,6 +228,17 @@ npm run build   # compila a build/
 ```
 
 pdf.js no es una dependencia del paquete publicado. Está como `devDependency`, y `npm install` corre el script `prepare`, que copia a `vendor/pdfjs/` solo los archivos que usa el servidor (~4 MB). Así, quien instala `utn-mcp` no baja pdf.js entero ni su canvas nativo opcional (~37 MB). Si instalaste con `--ignore-scripts`, generalo a mano con `npm run prepare`.
+
+### Conectores de autogestión
+Cada sistema de autogestión es un paquete aparte en `packages/` (hoy, `packages/sysacad-asp`). No se publica en npm: `utn-mcp login` baja el `.tgz` adjunto a un release del repo, comprueba que su hash sea el de `src/autogestion/client/catalog.ts` y lo extrae en `connectors/`. El conector implementa `AutogestionSystem` de `src/autogestion/client/connector.ts` y del core importa solo tipos: lo que necesita en tiempo de ejecución (las clases de error, `htmlToText`) se lo pasa el core en `create`.
+
+Para publicar una versión de un conector:
+```bash
+node scripts/pack-connector.mjs sysacad-asp
+```
+Arma el `.tgz` en `build-connectors/` y muestra la URL y el hash que van al catálogo, y el `gh release create` que lo sube.
+
+Para probar un conector sin publicarlo, compilalo, instalalo con `npm install` en la carpeta desde la que corrés `utn-mcp` y nombralo en `UTN_MCP_CONNECTORS` (separados por comas). Cargar un conector ejecuta su código: nombrá solo paquetes en los que confíes.
 
 ## Aviso
 Este proyecto no está afiliado ni avalado por la UTN. Usalo bajo tu responsabilidad.
